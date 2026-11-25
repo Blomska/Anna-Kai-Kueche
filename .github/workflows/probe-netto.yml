@@ -1,0 +1,33 @@
+name: Netto-Test (temporär)
+on:
+  push:
+    branches: [netto-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Probe
+        run: |
+          cat > p.mjs <<'JS'
+          const UA = { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', 'Accept-Language': 'de-DE' };
+          async function t(url, opts = {}) {
+            try {
+              const r = await fetch(url, { headers: { ...UA, ...(opts.headers || {}) }, redirect: 'follow' });
+              const txt = await r.text();
+              console.log('\n###', r.status, url, '->', r.url, txt.length);
+              console.log(txt.slice(0, opts.n || 600).replace(/\s+/g, ' '));
+              return txt;
+            } catch (e) { console.log('\n###', url, 'ERR', e.message); return ''; }
+          }
+          // Bounding box Lüdinghausen
+          const sf = await t('https://www.netto-online.de/INTERSHOP/web/WFS/Plus-NettoDE-Site/de_DE/-/EUR/ViewNettoStoreFinder-GetStoreItems?n=51.80&e=7.50&w=7.38&s=51.74', { n: 3000 });
+          await t('https://www.netto-online.de/filialfinder', { n: 300 });
+          const p = await t('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm', { n: 300 });
+          console.log('prospekt links:', [...new Set((p.match(/https?:[^"' ]*(prospekt|blaetter|flyer|catalog)[^"' ]*/gi) || []))].slice(0, 20));
+          const f = await t('https://www.netto-online.de/filialangebote', { n: 300 });
+          console.log('filial links:', [...new Set((f.match(/[^"' ]*filial[^"' ]*/gi) || []))].slice(0, 30));
+          await t('https://www.kaufda.de/Filialen/Luedinghausen/Netto-Marken-Discount/v-r9', { n: 200 }).then((x) => console.log('addr:', (x.match(/[A-ZÄÖÜ][a-zäöüß.-]+(?:stra(ß|ss)e|str\.|weg|platz|ring|damm|allee)[^<"]{0,15}59348[^<"]{0,20}/g) || []).slice(0, 5)));
+          JS
+          node p.mjs
