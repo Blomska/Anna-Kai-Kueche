@@ -2015,10 +2015,11 @@ function removeFromKochbuch(id) {
 
 /* ---------- Rezept-Formular ---------- */
 
-function openRecipeForm(id = null) {
-  const r = id ? (state.kochbuch || []).find((x) => x.id === id) : null;
-  state.recipeEditing = r ? r.id : null;
-  els.recipeFormTitle.textContent = r ? 'Rezept bearbeiten' : 'Rezept eintragen';
+function openRecipeForm(id = null, draft = null) {
+  const r = id ? (state.kochbuch || []).find((x) => x.id === id) : draft;
+  state.recipeEditing = id && r ? r.id : null;
+  state.recipeDraft = draft;
+  els.recipeFormTitle.textContent = draft ? 'Rezept prüfen' : r ? 'Rezept bearbeiten' : 'Rezept eintragen';
   els.rfKategorie.innerHTML = KB_KATEGORIEN.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
   els.rfTitel.value = r?.titel || '';
   els.rfBeschreibung.value = r?.beschreibung || '';
@@ -2031,6 +2032,103 @@ function openRecipeForm(id = null) {
   if (typeof els.recipeDialog.showModal === 'function') els.recipeDialog.showModal();
   else els.recipeDialog.setAttribute('open', '');
   if (!r) setTimeout(() => els.rfTitel.focus(), 50);
+}
+
+/* ---------- Rezept aus Foto, Link oder Text (über den Helfer) ---------- */
+
+function importStatus(text, error = false) {
+  const el = $('#importStatus');
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.toggle('is-error', error);
+}
+
+function openImportDialog(prefill = '') {
+  if (!CHAT_URL) { showToast('Dafür muss der Küchenhelfer eingerichtet sein.'); return; }
+  if (!readJSON(CODE_LS, '')) {
+    showToast('Bitte einmal im Helfer den Zugangscode eingeben.');
+    showView('helfer');
+    return;
+  }
+  importStatus('');
+  $('#importLink').value = prefill;
+  $('#importText').value = '';
+  const dlg = $('#importDialog');
+  if (!dlg.open) dlg.showModal();
+}
+
+/** Foto verkleinern (max. 1600 px, JPEG) → base64 ohne Präfix. */
+async function photoBase64(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+let importBusy = false;
+
+async function runImport(payload, herkunft) {
+  if (importBusy) return;
+  importBusy = true;
+  importStatus(payload.bild ? 'Lese das Foto … (dauert ein paar Sekunden)' : 'Lese das Rezept …');
+  $$('#importDialog button, #importDialog input, #importDialog textarea').forEach((el) => { el.disabled = true; });
+  try {
+    const res = await fetch(`${CHAT_URL.replace(/\/$/, '')}/rezept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Zugangscode': readJSON(CODE_LS, '') },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      chat.needsCode = true;
+      importStatus('Der Zugangscode stimmt nicht – bitte im Helfer neu eingeben.', true);
+    } else if (!res.ok || !data.rezept) {
+      importStatus(data.fehler || 'Das hat nicht geklappt. Bitte nochmal versuchen.', true);
+    } else {
+      $('#importDialog').close();
+      const r = data.rezept;
+      openRecipeForm(null, {
+        ...r,
+        kategorie: KB_KATEGORIEN.includes(r.kategorie) ? r.kategorie : 'Hauptgerichte',
+        herkunft,
+        beschreibung: [r.beschreibung, payload.link ? `Quelle: ${payload.link}` : ''].filter(Boolean).join(' ').slice(0, 240),
+        notiz: data.hinweis || ''
+      });
+      if (data.hinweis) showToast(data.hinweis);
+    }
+  } catch {
+    importStatus('Keine Verbindung – seid ihr online?', true);
+  }
+  $$('#importDialog button, #importDialog input, #importDialog textarea').forEach((el) => { el.disabled = false; });
+  importBusy = false;
+}
+
+/** Geteilter Link/Text (Android „Teilen" → Küche). */
+function handleSharedRecipe() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('url') && !params.has('text') && !params.has('title')) return;
+  const all = [params.get('url'), params.get('text'), params.get('title')].filter(Boolean).join(' ');
+  history.replaceState(null, '', location.pathname);
+  const link = all.match(/https?:\/\/\S+/)?.[0] || '';
+  showView('kochbuch');
+  setTimeout(() => {
+    openImportDialog(link);
+    if (link) runImport({ link }, 'link');
+    else if (all.trim()) { $('#importText').value = all.trim(); }
+  }, 300);
 }
 
 function closeRecipeForm() {
@@ -2064,7 +2162,12 @@ function saveRecipeForm() {
     favorit: old?.favorit,
     notiz: old?.notiz,
     schwierigkeit: old?.schwierigkeit
-  }, old?.herkunft || 'eigenes');
+  }, old?.herkunft || state.recipeDraft?.herkunft || 'eigenes');
+  if (!old && state.recipeDraft) {
+    const n = cleanNaehrwerte(state.recipeDraft.naehrwerte);
+    if (n) entry.naehrwerte = n;
+    entry.notiz = String(state.recipeDraft.notiz || '').slice(0, 500);
+  }
   if (old) entry.createdAt = old.createdAt || Date.now();
   const sameIngredients = old && JSON.stringify(old.zutaten) === JSON.stringify(entry.zutaten) && old.portionen === entry.portionen;
   if (sameIngredients && cleanNaehrwerte(old.naehrwerte)) entry.naehrwerte = cleanNaehrwerte(old.naehrwerte);
@@ -2357,7 +2460,8 @@ function renderRecipes() {
       <button type="button" class="btn btn--primary" data-rf-new>
         <svg width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg> Rezept eintragen
       </button>
-      <label class="btn btn--tinted kb__file">
+      <button type="button" class="btn btn--tinted" data-import-open>Aus Foto oder Link</button>
+      <label class="btn btn--plain kb__file">
         JSON importieren
         <input type="file" accept="application/json,.json" id="kbFile" hidden>
       </label>
@@ -2521,6 +2625,7 @@ function handleRecipeClick(e, container) {
     return true;
   }
   if (t.closest('[data-rf-new]')) { openRecipeForm(); return true; }
+  if (t.closest('[data-import-open]')) { openImportDialog(); return true; }
   if (t.closest('[data-import-file]')) { importRecipes(pendingImports(), 'import'); return true; }
   const edit = t.closest('[data-kb-edit]');
   if (edit) { openRecipeForm(edit.dataset.kbEdit); return true; }
@@ -3406,6 +3511,35 @@ function bindEvents() {
     writeJSON('kueche:wocheneinkauf-aus', weekKey());
     renderWeeklyCheck();
   });
+
+  // Rezept aus Foto, Link oder Text
+  $('#importCancel').addEventListener('click', () => $('#importDialog').close());
+  $('#importPhoto').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      runImport({ bild: await photoBase64(file), mime: 'image/jpeg' }, 'foto');
+    } catch {
+      importStatus('Das Foto ließ sich nicht öffnen.', true);
+    }
+  });
+  $('#importLinkForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const link = $('#importLink').value.trim();
+    if (!/^https?:\/\//.test(link)) { importStatus('Bitte einen vollständigen Link (https://…) einfügen.', true); return; }
+    runImport({ link }, 'link');
+  });
+  $('#importTextForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('#importText').value.trim();
+    if (text.length < 30) { importStatus('Bitte den ganzen Rezepttext einfügen.', true); return; }
+    runImport({ text }, 'text');
+  });
+  $('#importDialog').addEventListener('click', (e) => {
+    if (e.target === $('#importDialog') && !importBusy) $('#importDialog').close();
+  });
+  handleSharedRecipe();
 
   // Gang-Reihenfolge
   $('#aisleBtn').addEventListener('click', openAisleDialog);

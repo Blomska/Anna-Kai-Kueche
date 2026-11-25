@@ -285,6 +285,33 @@
     </form>
   </dialog>
 
+  <!-- Rezept aus Foto, Link oder Text -->
+  <dialog id="importDialog" class="sheet" aria-labelledby="importTitle">
+    <div class="sheet__inner">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="importTitle" tabindex="-1" autofocus>Rezept übernehmen</h2>
+      <p class="sheet__hint">Der Helfer liest das Rezept aus. Danach könnt ihr alles prüfen und speichern.</p>
+      <label class="btn btn--primary btn--block import__photo">
+        📷 Foto vom Rezept
+        <input type="file" accept="image/*" id="importPhoto" hidden>
+      </label>
+      <p class="field-label">oder Link (Chefkoch, Instagram, Blog …)</p>
+      <form class="memory__form" id="importLinkForm" autocomplete="off">
+        <input type="text" id="importLink" placeholder="https://…" aria-label="Link zum Rezept" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit" class="btn btn--tinted">Holen</button>
+      </form>
+      <p class="field-label">oder Rezepttext einfügen</p>
+      <form id="importTextForm" class="import__text" autocomplete="off">
+        <textarea id="importText" rows="4" maxlength="15000" placeholder="Zutaten und Zubereitung hier einfügen" aria-label="Rezepttext"></textarea>
+        <button type="submit" class="btn btn--tinted btn--block">Auswerten</button>
+      </form>
+      <p class="import__status" id="importStatus" role="status" hidden></p>
+      <div class="sheet__actions">
+        <button type="button" class="btn btn--plain" id="importCancel">Schließen</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Gang-Reihenfolge je Laden -->
   <dialog id="aisleDialog" class="sheet sheet--tall" aria-labelledby="aisleTitle">
     <form method="dialog" id="aisleForm" class="sheet__inner">
