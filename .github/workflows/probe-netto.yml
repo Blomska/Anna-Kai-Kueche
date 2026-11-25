@@ -23,15 +23,25 @@ jobs:
           }
           const ctx = (txt, re, n = 250) => { const out = []; let m; const r = new RegExp(re, 'gi'); while ((m = r.exec(txt)) && out.length < 6) out.push(txt.slice(Math.max(0, m.index - n), m.index + n).replace(/\s+/g, ' ')); return out; };
           const id = '6061';
-          const pr = await t('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm/' + id, { n: 0 });
-          console.log('prospekt links:', [...new Set(pr.match(/https?:[^"' <>()]*(blaetter|catalog|flip|media-central|leaflet|\.pdf|publitas|yumpu|issuu|bonial|prospekt)[^"' <>()]*/gi) || [])].slice(0, 30));
-          console.log('prospekt ctx:', ctx(pr, 'data-(?:url|src|catalog|prospekt)', 200).slice(0, 4));
-          for (const u of ['https://www.netto-online.de/filialangebote/' + id, 'https://www.netto-online.de/filialangebote?storeId=' + id, 'https://www.netto-online.de/filialangebote?StoreID=' + id]) {
-            const fa = await t(u, { n: 0 });
-            const prods = fa.match(/class="[^"]*product[^"]*"/g) || [];
-            console.log(u, 'product-classes', prods.length, 'Olfener?', /Olfener/.test(fa), 'prices', (fa.match(/\d+[.,]\d{2}\s*(€|&euro;)/g) || []).length);
-            console.log('names:', [...new Set(fa.match(/class="product__title[^"]*"[^>]*>[^<]{3,80}/g) || [])].slice(0, 8));
-            console.log('ajax:', [...new Set(fa.match(/https:\/\/www\.netto-online\.de\/INTERSHOP\/web[^"' ]*/g) || [])].filter((x) => /Offer|Angebot|Product|Catalog/i.test(x)).slice(0, 12));
+          const jar = new Map();
+          const keep = (r) => { for (const c of r.headers.getSetCookie?.() || []) { const [kv] = c.split(';'); const i = kv.indexOf('='); jar.set(kv.slice(0, i), kv.slice(i + 1)); } };
+          const cookie = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+          const go = async (url, opts = {}) => { const r = await fetch(url, { redirect: 'manual', ...opts, headers: { ...UA, Cookie: cookie(), ...(opts.headers || {}) } }); keep(r); return r; };
+          let r = await go('https://www.netto-online.de/filialfinder');
+          const ff = await r.text();
+          const tok = (ff.match(/SynchronizerToken["']?\s*[:=]\s*["']?([a-f0-9]{20,})/i) || ff.match(/name="SynchronizerToken"\s+value="([^"]+)"/) || [])[1];
+          const setPath = (ff.match(/storefinderSetID:\s*"([^"]+)"/) || [])[1];
+          console.log('cookies', [...jar.keys()], 'token', tok, 'setPath', setPath, ctx(ff, 'SyncToken|SynchronizerToken', 120).slice(0, 2));
+          if (setPath) {
+            r = await go(setPath, { method: 'POST', body: `StoreID=${id}${tok ? `&SynchronizerToken=${tok}` : ''}`, headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' } });
+            console.log('set', r.status, (await r.text()).slice(0, 300));
           }
+          r = await go('https://www.netto-online.de/filialangebote');
+          let fa = await r.text();
+          if (r.status >= 300 && r.status < 400) { r = await go(new URL(r.headers.get('location'), 'https://www.netto-online.de').href); fa = await r.text(); }
+          console.log('FA', r.status, fa.length, 'Olfener?', /Olfener|6061/.test(fa), 'prices', (fa.match(/\d+[.,]\d{2}\s*(€|&euro;)/g) || []).length);
+          console.log('tiles:', ctx(fa, 'product[-_]?(tile|title|name)', 160).slice(0, 4));
+          const pr2 = await (await go('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm')).text();
+          console.log('flipbooks:', [...new Set(pr2.match(/https?:[^"' <>()]*flipbook[^"' <>()]*/gi) || [])].slice(0, 6), ctx(pr2, 'data-catalog|flipbook', 200).slice(0, 3));
           JS
           node p.mjs
