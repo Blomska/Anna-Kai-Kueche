@@ -1,0 +1,46 @@
+{
+  "hinweis": "Rezepte hier eintragen und auf GitHub speichern. In der App erscheint dann im Kochbuch 'Ins Kochbuch übernehmen'. Rezepte, die schon im Kochbuch stehen (gleicher Titel), werden übersprungen.",
+  "rezepte": [
+    {
+      "titel": "Hähnchen-Curry mit Kichererbsen",
+      "beschreibung": "Cremig, mild und richtig viel Eiweiß.",
+      "kategorie": "Hauptgerichte",
+      "portionen": 2,
+      "dauer_minuten": 30,
+      "zutaten": [
+        "400 g Hähnchenbrust",
+        "1 Dose Kichererbsen",
+        "200 ml Kokosmilch light",
+        "1 Paprika",
+        "100 g Babyspinat",
+        "2 Zehen Knoblauch",
+        "1 EL Currypulver (Vorrat)",
+        "125 g Basmatireis (Vorrat)"
+      ],
+      "schritte": [
+        "Reis nach Packungsanweisung kochen.",
+        "Hähnchen würfeln und in einer Pfanne kräftig anbraten.",
+        "Knoblauch und Paprika dazu, kurz mitbraten, mit Currypulver bestäuben.",
+        "Kichererbsen und Kokosmilch dazugeben, 10 Minuten köcheln lassen.",
+        "Spinat unterheben, abschmecken und mit dem Reis servieren."
+      ]
+    },
+    {
+      "titel": "Skyr-Bowl mit Beeren",
+      "beschreibung": "Schnelles Frühstück mit über 30 g Eiweiß pro Schüssel.",
+      "kategorie": "Frühstück",
+      "portionen": 2,
+      "dauer_minuten": 5,
+      "zutaten": [
+        { "name": "Skyr", "menge": "500 g" },
+        { "name": "Tiefkühl-Beeren", "menge": "200 g" },
+        { "name": "Haferflocken", "menge": "60 g", "vorrat": true },
+        { "name": "Mandeln", "menge": "30 g", "vorrat": true }
+      ],
+      "schritte": [
+        "Beeren kurz antauen lassen.",
+        "Skyr in zwei Schüsseln verteilen, Beeren, Haferflocken und Mandeln darübergeben."
+      ]
+    }
+  ]
+}

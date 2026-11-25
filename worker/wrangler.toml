@@ -1,0 +1,15 @@
+# Cloudflare Worker für den Küchenhelfer von Anna & Kai Küche.
+# Wird automatisch per GitHub-Workflow (.github/workflows/chat-helfer.yml) veröffentlicht.
+# Eigener Name – überschreibt NICHT den Helfer von Mama-Einkauf.
+name = "anna-kai-helfer"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
+
+[vars]
+# Nur Anfragen von der App sind erlaubt (Komma-getrennt)
+ALLOWED_ORIGINS = "https://blomska.github.io"
+# Hier holt der Helfer die aktuellen Angebote und Rezepte
+DATA_URL = "https://blomska.github.io/Anna-Kai-Kueche/data/"

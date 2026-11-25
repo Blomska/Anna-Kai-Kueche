@@ -1,0 +1,89 @@
+# Holt täglich die aktuellen Prospekte & Angebote (Aldi Nord, Marktkauf
+# Nientied, REWE Lüdinghausen) und veröffentlicht die App auf GitHub Pages.
+#
+# Einmalig einrichten: GitHub → Settings → Pages → Source: "GitHub Actions"
+# Für die KI-Rezepte das Secret GEMINIAPIKEYANNA anlegen (eigenes Kontingent).
+name: Prospekte aktualisieren & veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * *'    # täglich ca. 5–6 Uhr deutscher Zeit
+    - cron: '17 15 * * *'   # täglich ca. 16–17 Uhr (Marktkauf-Folgewoche ab Donnerstag)
+  workflow_dispatch:        # manuell: Actions → "Run workflow"
+    inputs:
+      nur_rezepte:
+        description: 'Nur Rezepte erstellen (Prospekt-Auswertung überspringen, spart Gemini-Kontingent)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Abhängigkeiten installieren
+        run: npm ci --no-audit --no-fund
+
+      - name: Prospekte & Angebote abrufen
+        run: node scripts/update-prospekte.mjs
+        continue-on-error: true   # bei Ausfall: zuletzt gespeicherte Daten nutzen
+
+      # Zwischenspeicher für KI-Ergebnisse: Gemini wird nur gefragt, wenn sich
+      # Prospekt oder Angebote geändert haben (spart Kontingent).
+      - name: KI-Zwischenspeicher laden
+        uses: actions/cache@v4
+        with:
+          path: .ki-cache
+          key: ki-cache-${{ github.run_id }}
+          restore-keys: ki-cache-
+
+      # Neue Gemini-Anfragen nur zu den festen Zeiten bzw. bei manuellem Start.
+      # Bei Code-Uploads (push) werden nur zwischengespeicherte Ergebnisse übernommen.
+      - name: KI – Marktkauf-Produkte & Rezepte der Woche
+        run: node scripts/ki-auswertung.mjs
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          # Eigenes Kontingent von Anna & Kai – NICHT das von Mama-Einkauf
+          GEMINI_API_KEY: ${{ secrets.GEMINIAPIKEYANNA || secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          KI_NUR_REZEPTE: ${{ inputs.nur_rezepte && '1' || '' }}
+          KI_OFFLINE: ${{ github.event_name == 'push' && '1' || '' }}
+
+      - name: Webseite zusammenstellen
+        run: |
+          mkdir -p _site
+          cp -r index.html style.css app.js categories.js config.js wissen.js manifest.json sw.js .nojekyll icons data _site/
+
+      - name: Pages konfigurieren
+        uses: actions/configure-pages@v5
+
+      - name: Hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4
