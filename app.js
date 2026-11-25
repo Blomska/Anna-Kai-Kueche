@@ -876,8 +876,9 @@ function render() {
     tab.setAttribute('aria-selected', String(active));
   });
 
-  // Offene Artikel nach Kategorie (Laufweg-Reihenfolge)
-  const groups = CATEGORIES
+  // Offene Artikel nach Kategorie (Laufweg-Reihenfolge, je Laden anpassbar)
+  $('#aisleBar').hidden = state.filter === 'all' || !visible.length;
+  const groups = storeOrder(state.filter)
     .map((cat) => ({
       cat,
       items: visible.filter((i) => i.category === cat.id).sort((a, b) => a.createdAt - b.createdAt)
@@ -925,6 +926,43 @@ function render() {
   updateGreeting();
   updateNavBadges(open.length);
   updateDocumentTitle(open.length);
+}
+
+/* ---------- Gang-Reihenfolge je Laden (auf diesem Handy gespeichert) ---------- */
+
+const aisleKey = (store) => `kueche:gaenge:${store}`;
+let aisleDraft = null;
+
+/** Kategorien in der Reihenfolge, die für diesen Laden festgelegt wurde. */
+function storeOrder(store) {
+  if (!STORES.includes(store)) return CATEGORIES;
+  const saved = readJSON(aisleKey(store), []);
+  if (!Array.isArray(saved) || !saved.length) return CATEGORIES;
+  const pos = new Map(saved.map((id, i) => [id, i]));
+  return CATEGORIES
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => (pos.get(a.c.id) ?? 100 + a.i) - (pos.get(b.c.id) ?? 100 + b.i))
+    .map((x) => x.c);
+}
+
+function renderAisleList() {
+  $('#aisleList').innerHTML = aisleDraft.map((id, i) => {
+    const cat = CATEGORY_BY_ID[id];
+    return `
+      <li><span>${cat.icon} ${escapeHtml(cat.name)}</span>
+        <button type="button" data-aisle="${i}" data-dir="-1" aria-label="${escapeHtml(cat.name)} nach oben" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" data-aisle="${i}" data-dir="1" aria-label="${escapeHtml(cat.name)} nach unten" ${i === aisleDraft.length - 1 ? 'disabled' : ''}>↓</button>
+      </li>`;
+  }).join('');
+}
+
+function openAisleDialog() {
+  const store = state.filter;
+  if (!STORES.includes(store)) return;
+  aisleDraft = storeOrder(store).map((c) => c.id);
+  $('#aisleTitle').textContent = `Gänge bei ${STORE_NAMES[store] || STORE_LABELS[store]}`;
+  renderAisleList();
+  $('#aisleDialog').showModal();
 }
 
 function renderFavorites() {
@@ -2899,10 +2937,10 @@ function buildShareText() {
   const date = new Date().toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
   const lines = [`🛒 *Einkaufsliste* (${date})`];
 
-  const formatSection = (title, items) => {
+  const formatSection = (title, items, store) => {
     if (!items.length) return;
     lines.push('', title);
-    for (const cat of CATEGORIES) {
+    for (const cat of storeOrder(store)) {
       const catItems = items
         .filter((i) => i.category === cat.id)
         .sort((a, b) => a.createdAt - b.createdAt);
@@ -2917,15 +2955,15 @@ function buildShareText() {
   };
 
   if (state.filter === 'all') {
-    formatSection('🟠 *Aldi*', open.filter((i) => i.store === 'aldi'));
-    formatSection('🔵 *Marktkauf*', open.filter((i) => i.store === 'marktkauf'));
-    formatSection('🔴 *REWE*', open.filter((i) => i.store === 'rewe'));
-    formatSection('🟡 *Netto*', open.filter((i) => i.store === 'netto'));
+    formatSection('🟠 *Aldi*', open.filter((i) => i.store === 'aldi'), 'aldi');
+    formatSection('🔵 *Marktkauf*', open.filter((i) => i.store === 'marktkauf'), 'marktkauf');
+    formatSection('🔴 *REWE*', open.filter((i) => i.store === 'rewe'), 'rewe');
+    formatSection('🟡 *Netto*', open.filter((i) => i.store === 'netto'), 'netto');
     const both = open.filter((i) => i.store === 'both');
     const hasStoreSpecific = both.length !== open.length;
     formatSection(hasStoreSpecific ? '🟢 *Egal wo*' : '🟢 *Alles*', both);
   } else {
-    formatSection(`*${STORE_LABELS[state.filter]}*`, open);
+    formatSection(`*${STORE_LABELS[state.filter]}*`, open, state.filter);
   }
 
   lines.push('', `${open.length} Artikel`);
@@ -3201,6 +3239,31 @@ function bindEvents() {
   $('#weeklyHide').addEventListener('click', () => {
     writeJSON('kueche:wocheneinkauf-aus', weekKey());
     renderWeeklyCheck();
+  });
+
+  // Gang-Reihenfolge
+  $('#aisleBtn').addEventListener('click', openAisleDialog);
+  $('#aisleList').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-aisle]');
+    if (!btn) return;
+    const i = Number(btn.dataset.aisle);
+    const j = i + Number(btn.dataset.dir);
+    if (j < 0 || j >= aisleDraft.length) return;
+    [aisleDraft[i], aisleDraft[j]] = [aisleDraft[j], aisleDraft[i]];
+    renderAisleList();
+    vibrate(8);
+  });
+  $('#aisleReset').addEventListener('click', () => {
+    aisleDraft = CATEGORIES.map((c) => c.id);
+    renderAisleList();
+  });
+  $('#aisleForm').addEventListener('submit', () => {
+    writeJSON(aisleKey(state.filter), aisleDraft);
+    render();
+    showToast('Reihenfolge gespeichert');
+  });
+  $('#aisleDialog').addEventListener('click', (e) => {
+    if (e.target === $('#aisleDialog')) $('#aisleDialog').close();
   });
 
   // Kochmodus

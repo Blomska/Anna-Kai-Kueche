@@ -117,6 +117,10 @@
           </button>
         </nav>
 
+        <div class="aisle-bar" id="aisleBar" hidden>
+          <button type="button" class="aisle-bar__btn" id="aisleBtn">Reihenfolge der Gänge anpassen</button>
+        </div>
+
         <section id="list" class="list" aria-live="polite"></section>
 
         <div class="empty" id="emptyState" hidden>
@@ -277,6 +281,20 @@
         <button type="button" class="btn btn--destructive-plain" id="editDelete">Löschen</button>
         <button type="button" class="btn btn--plain" id="editCancel">Abbrechen</button>
         <button type="submit" class="btn btn--primary" id="editSave" value="save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Gang-Reihenfolge je Laden -->
+  <dialog id="aisleDialog" class="sheet sheet--tall" aria-labelledby="aisleTitle">
+    <form method="dialog" id="aisleForm" class="sheet__inner">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="aisleTitle">Gänge</h2>
+      <p class="sheet__hint">So sortiert die Liste, wenn oben dieser Laden gewählt ist. Mit den Pfeilen in die Reihenfolge bringen, in der ihr durch den Laden geht.</p>
+      <ol class="aisle-list" id="aisleList"></ol>
+      <div class="sheet__actions sheet__actions--sticky">
+        <button type="button" class="btn btn--plain" id="aisleReset">Standard</button>
+        <button type="submit" class="btn btn--primary" value="save">Fertig</button>
       </div>
     </form>
   </dialog>

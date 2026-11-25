@@ -802,3 +802,12 @@ dialog { color: var(--text); }
 .cook__nav { display: flex; gap: 10px; padding: 12px 20px calc(14px + var(--safe-bottom)); border-top: .5px solid var(--line); }
 .cook__nav .btn { flex: 1; min-height: 54px; font-size: 18px; }
 .recipe__cook { margin-top: 8px; }
+
+/* ---------- Gang-Reihenfolge ---------- */
+.aisle-bar { display: flex; justify-content: flex-end; margin: -4px 4px 8px; }
+.aisle-bar__btn { border: 0; background: none; padding: 6px 4px; color: var(--lilac-strong); font: inherit; font-size: 14px; font-weight: 500; }
+.aisle-list { margin: 0; padding: 0; list-style: none; }
+.aisle-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: .5px solid var(--line); font-size: 17px; }
+.aisle-list li span { flex: 1; }
+.aisle-list button { width: 40px; height: 40px; border: 0; border-radius: 12px; background: var(--fill); color: var(--text); font-size: 18px; }
+.aisle-list button:disabled { opacity: .35; }
