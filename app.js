@@ -2188,7 +2188,8 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
           <h4>Zutaten</h4>
           <div class="ingr-list">${ingredients}</div>
           <button type="button" class="btn btn--primary btn--block recipe__add" data-recipe-add="${k}">Ausgewählte auf die Liste</button>
-          ${(r.schritte || []).length ? `<h4>Zubereitung</h4>
+          ${(r.schritte || []).length ? `<button type="button" class="btn btn--tinted btn--block recipe__cook" data-cook="${k}">Kochmodus starten</button>
+          <h4>Zubereitung</h4>
           <ol class="steps">${(r.schritte || []).map((st) => `<li>${escapeHtml(st)}</li>`).join('')}</ol>` : ''}
           ${inBook ? `
           <h4>Notiz</h4>
@@ -2406,6 +2407,8 @@ function handleRecipeClick(e, container) {
     }
     return true;
   }
+  const cookBtn = t.closest('[data-cook]');
+  if (cookBtn) { openCook(cookBtn.dataset.cook); return true; }
   const add = t.closest('[data-recipe-add]');
   if (add) { addRecipeIngredients(add.dataset.recipeAdd, container); return true; }
   const save = t.closest('[data-recipe-save]');
@@ -2429,6 +2432,149 @@ function handleRecipeClick(e, container) {
   const del = t.closest('[data-kb-delete]');
   if (del) { removeFromKochbuch(del.dataset.kbDelete); return true; }
   return false;
+}
+
+/* ---------- Kochmodus ---------- */
+
+const cook = { recipe: null, key: '', step: 0, factor: 1, timers: [], tick: null, wakeLock: null, audio: null };
+
+/** Zeitangaben in einem Schritt finden: „10 Minuten", „5–7 Min.", „1 Stunde", „1,5 Std." */
+function stepDurations(text) {
+  const out = [];
+  const re = /(\d+(?:[.,]\d+)?)(?:\s*(?:-|–|bis)\s*(\d+(?:[.,]\d+)?))?\s*(sekunden|sek\.?|minuten|min\.?|stunden|stunde|std\.?)(?![a-zäöü])/gi;
+  for (const m of String(text).matchAll(re)) {
+    const value = Number((m[2] || m[1]).replace(',', '.'));
+    const unit = m[3].toLowerCase();
+    const sec = unit.startsWith('s') && !unit.startsWith('st') ? value : unit.startsWith('st') ? value * 3600 : value * 60;
+    if (sec >= 10 && sec <= 6 * 3600) out.push({ label: m[0].trim(), sec: Math.round(sec) });
+  }
+  return out;
+}
+
+function formatTimer(sec) {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${r}` : `${m}:${r}`;
+}
+
+async function keepScreenOn(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !cook.wakeLock) {
+      cook.wakeLock = await navigator.wakeLock.request('screen');
+      cook.wakeLock.addEventListener('release', () => { cook.wakeLock = null; });
+    } else if (!on && cook.wakeLock) {
+      await cook.wakeLock.release();
+      cook.wakeLock = null;
+    }
+  } catch { /* nicht unterstützt – egal */ }
+}
+
+function openCook(key) {
+  const recipe = recipeByKey(key);
+  if (!recipe || !(recipe.schritte || []).length) return;
+  cook.recipe = recipe;
+  cook.key = key;
+  cook.step = 0;
+  cook.factor = portionsFor(key, recipe) / (Number(recipe.portionen) || 2);
+  $('#cookTitle').textContent = recipe.titel;
+  renderCook();
+  const dlg = $('#cookDialog');
+  if (!dlg.open) dlg.showModal();
+  keepScreenOn(true);
+  // iOS: Ton erst nach einer Berührung freigeben
+  try {
+    if (!cook.audio) cook.audio = new (window.AudioContext || window.webkitAudioContext)();
+    cook.audio.resume();
+  } catch { cook.audio = null; }
+}
+
+function renderCook() {
+  const r = cook.recipe;
+  if (!r) return;
+  const steps = r.schritte;
+  const total = steps.length + 1; // Schritt 0 = Zutaten
+  const i = cook.step;
+  $('#cookProgress').innerHTML = Array.from({ length: total }, (_, n) => `<span class="${n <= i ? 'is-done' : ''}"></span>`).join('');
+  const stems = avoidStems();
+  let html;
+  if (i === 0) {
+    const persons = portionsFor(cook.key, r);
+    html = `
+      <p class="cook__count">Zutaten für ${persons} Portion${persons === 1 ? '' : 'en'}</p>
+      <ul class="cook__ingr">${(r.zutaten || []).map((z) => `
+        <li class="${isAvoided(z.name, stems) ? 'is-avoided' : ''}"><span>${escapeHtml(z.name)}</span><span>${escapeHtml(scaleMenge(z.menge, cook.factor))}</span></li>`).join('')}
+      </ul>`;
+  } else if (i <= steps.length) {
+    const text = steps[i - 1];
+    const durations = stepDurations(text);
+    html = `
+      <p class="cook__count">Schritt ${i} von ${steps.length}</p>
+      <p class="cook__step">${escapeHtml(text)}</p>
+      ${durations.length ? `<div class="cook__timerbtns">${durations.map((d) => `
+        <button type="button" class="btn btn--tinted" data-cook-timer="${d.sec}" data-cook-label="${escapeHtml(d.label)}">⏱ Timer ${escapeHtml(d.label)}</button>`).join('')}</div>` : ''}`;
+  } else {
+    html = `<p class="cook__done">Guten Appetit! 🍽️</p>`;
+  }
+  $('#cookBody').innerHTML = html;
+  $('#cookBody').scrollTop = 0;
+  $('#cookPrev').disabled = i === 0;
+  $('#cookNext').textContent = i === 0 ? 'Los geht’s' : i < steps.length ? 'Weiter' : i === steps.length ? 'Fertig' : 'Schließen';
+  renderCookTimers();
+}
+
+function renderCookTimers() {
+  const wrap = $('#cookTimers');
+  wrap.hidden = !cook.timers.length;
+  wrap.innerHTML = cook.timers.map((t) => {
+    const left = (t.end - Date.now()) / 1000;
+    return `<button type="button" class="cook__timer${left <= 0 ? ' is-ringing' : ''}" data-cook-stop="${t.id}" aria-label="Timer ${escapeHtml(t.label)} ${left <= 0 ? 'ausschalten' : 'abbrechen'}">
+      ⏱ ${left <= 0 ? 'Fertig!' : formatTimer(left)} <small>${escapeHtml(t.label)}</small> ✕</button>`;
+  }).join('');
+}
+
+function beep() {
+  vibrate([300, 150, 300]);
+  const ctx = cook.audio;
+  if (!ctx) return;
+  try {
+    [0, 0.35, 0.7].forEach((at) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.25, ctx.currentTime + at);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.3);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + at);
+      o.stop(ctx.currentTime + at + 0.3);
+    });
+  } catch { /* ohne Ton */ }
+}
+
+function cookTick() {
+  const now = Date.now();
+  cook.timers.forEach((t) => {
+    if (!t.rung && t.end <= now) {
+      t.rung = true;
+      showToast(`Timer fertig: ${t.label}`);
+    }
+    if (t.rung && (now - t.end) < 60000 && Math.floor((now - t.end) / 1000) % 5 === 0) beep();
+  });
+  renderCookTimers();
+  if (!cook.timers.length) { clearInterval(cook.tick); cook.tick = null; }
+}
+
+function startCookTimer(sec, label) {
+  cook.timers.push({ id: makeId(), label, end: Date.now() + sec * 1000, rung: false });
+  if (!cook.tick) cook.tick = setInterval(cookTick, 1000);
+  renderCookTimers();
+  vibrate(15);
+}
+
+function closeCook() {
+  const dlg = $('#cookDialog');
+  if (dlg.open) dlg.close();
 }
 
 /* ---------- Gedächtnis (Vorlieben) ---------- */
@@ -3008,6 +3154,45 @@ function bindEvents() {
   $('#weeklyHide').addEventListener('click', () => {
     writeJSON('kueche:wocheneinkauf-aus', weekKey());
     renderWeeklyCheck();
+  });
+
+  // Kochmodus
+  $('#cookClose').addEventListener('click', closeCook);
+  $('#cookDialog').addEventListener('close', () => {
+    keepScreenOn(false);
+    cook.timers = [];
+    clearInterval(cook.tick);
+    cook.tick = null;
+  });
+  $('#cookPrev').addEventListener('click', () => { if (cook.step > 0) { cook.step -= 1; renderCook(); } });
+  $('#cookNext').addEventListener('click', () => {
+    if (cook.step > cook.recipe.schritte.length) { closeCook(); return; }
+    cook.step += 1;
+    renderCook();
+  });
+  $('#cookBody').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cook-timer]');
+    if (btn) startCookTimer(Number(btn.dataset.cookTimer), btn.dataset.cookLabel);
+  });
+  $('#cookTimers').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cook-stop]');
+    if (!btn) return;
+    cook.timers = cook.timers.filter((t) => t.id !== btn.dataset.cookStop);
+    renderCookTimers();
+  });
+  // Wischen: links = weiter, rechts = zurück
+  let touchX = null;
+  $('#cookBody').addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  $('#cookBody').addEventListener('touchend', (e) => {
+    if (touchX == null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) < 60) return;
+    if (dx < 0 && cook.step <= cook.recipe.schritte.length) $('#cookNext').click();
+    if (dx > 0 && cook.step > 0) $('#cookPrev').click();
+  }, { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && $('#cookDialog').open) keepScreenOn(true);
   });
 
   // Gedächtnis (Vorlieben)
