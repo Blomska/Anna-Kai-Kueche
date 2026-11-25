@@ -22,16 +22,21 @@ jobs:
             } catch (e) { console.log('\n###', url, 'ERR', e.message); return ''; }
           }
           const ctx = (txt, re, n = 250) => { const out = []; let m; const r = new RegExp(re, 'gi'); while ((m = r.exec(txt)) && out.length < 6) out.push(txt.slice(Math.max(0, m.index - n), m.index + n).replace(/\s+/g, ' ')); return out; };
-          const ff = await t('https://www.netto-online.de/filialfinder', { n: 0 });
-          const srcs = [...new Set(ff.match(/<script[^>]+src="([^"]+)"/g) || [])].map((x) => x.match(/src="([^"]+)"/)[1]);
-          console.log('scripts', srcs.length);
-          for (const src of srcs) {
-            const u = src.startsWith('http') ? src : 'https://www.netto-online.de' + src;
-            if (!/netto-online/.test(u)) continue;
-            const js = await fetch(u, { headers: UA }).then((r) => r.text()).catch(() => '');
-            const hits = ctx(js, 'searchPath[,)+]', 700);
-            if (hits.length) console.log('JS', u, '\n', hits.slice(0, 3).join('\n---\n'));
+          const base = 'https://www.netto-online.de/INTERSHOP/web/WFS/Plus-NettoDE-Site/de_DE/-/EUR/ViewMMPStoreFinder-GetStoreItems';
+          const q = 's=51.74&n=51.80&w=7.38&e=7.50&netto=true&city=&service=&beverage=&nonfood=';
+          for (const [m, url, body] of [['GET', base + '?' + q, undefined], ['POST', base, q]]) {
+            try {
+              const r = await fetch(url, { method: m, body, headers: { ...UA, 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/javascript, */*', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', Referer: 'https://www.netto-online.de/filialfinder' } });
+              const x = await r.text();
+              console.log('\n###', m, r.status, x.length, x.slice(0, 1500));
+              const id = (ctx(x, 'Olfener', 800).join(' ').match(/"store_id"\s*:\s*"?(\w+)/i) || [])[1];
+              console.log('OLFENER', ctx(x, 'Olfener', 500).slice(0, 1));
+              if (id) {
+                const pr = await t('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm/' + id, { n: 0 });
+                console.log('prospekt links:', [...new Set(pr.match(/https?:[^"' <>]*(blaetter|catalog|flip|prospekt|media-central|leaflet|\.pdf|publitas|yumpu|issuu)[^"' <>]*/gi) || [])].slice(0, 25));
+                break;
+              }
+            } catch (e) { console.log(m, 'ERR', e.message); }
           }
-          console.log('inline:', ctx(ff, 'storefinderJSON', 600).slice(1, 3));
           JS
           node p.mjs
