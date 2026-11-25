@@ -969,7 +969,7 @@ function addFromText(text, store = state.addStore) {
 }
 
 /** Fügt bereits zerlegte Artikel [{ name, qty }] hinzu. */
-function addParsed(parsed, store = state.addStore) {
+function addParsed(parsed, store = state.addStore, { quiet = false } = {}) {
   if (!parsed.length) return false;
   // Familien-Gedächtnis: z. B. "Milch" → "Milch 1,5 %"
   parsed = parsed.map((p) => ({ ...p, name: applyWissen(p.name) }));
@@ -1013,6 +1013,8 @@ function addParsed(parsed, store = state.addStore) {
     setTimeout(() => { duplicates.forEach((i) => state.flash.delete(i.id)); }, 1300);
     render();
   }
+
+  if (quiet) return { ids: toAdd.map((i) => i.id), duplicates: duplicates.length };
 
   // Rückmeldung
   const storeHint = store !== 'both' ? ` (${STORE_LABELS[store]})` : '';
@@ -1180,7 +1182,7 @@ function openOffers() {
   }
   state.offerRows = getOfferCandidates();
   const until = new Date(offerWeekEnd());
-  els.offerUntil.textContent = until.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' });
+  els.offerUntil.textContent = until.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/\.$/, '');
   els.offerNewName.value = '';
   renderOfferRows();
   if (typeof els.offerDialog.showModal === 'function') els.offerDialog.showModal();
@@ -2020,6 +2022,17 @@ function formatAmount(n, unit = '') {
   return String(v).replace('.', ',');
 }
 
+// Einheiten in der Mehrzahl ("1 Dose" ×2 → "2 Dosen")
+const PLURALS = {
+  dose: 'Dosen', zehe: 'Zehen', packung: 'Packungen', scheibe: 'Scheiben', knolle: 'Knollen', stange: 'Stangen',
+  flasche: 'Flaschen', tafel: 'Tafeln', rolle: 'Rollen', glas: 'Gläser', kopf: 'Köpfe', tasse: 'Tassen', prise: 'Prisen', zweig: 'Zweige'
+};
+function pluralUnit(unit, n) {
+  const p = PLURALS[unit.toLowerCase()];
+  if (!p || n <= 1) return unit;
+  return unit[0] === unit[0].toUpperCase() ? p : p.toLowerCase();
+}
+
 // Mengen, die man nur ganz kaufen kann → auf ganze Stücke runden
 const WHOLE_UNITS = /(stück|stk|st\.|\beier?\b|dosen?|gläser|glas|becher|packung|pck|päckchen|bund|zehen?|scheiben?|beutel|knollen?|köpfe?|kopf|stangen?|flaschen?|tafeln?|rollen?)/i;
 
@@ -2034,7 +2047,11 @@ function scaleMenge(menge, factor) {
     const u = unit.toLowerCase();
     if (u === 'g' && n >= 1000) return `${formatAmount(n / 1000, 'kg')}${space}kg`;
     if (u === 'ml' && n >= 1000) return `${formatAmount(n / 1000, 'l')}${space}l`;
-    if (whole) return `${Math.max(1, Math.round(n + 0.24))}${space}${unit}`;
+    // Ganze Stücke: mit Einheit wie "Dose" oder ohne Einheit ("1 Paprika" → nicht "1,5 Paprika")
+    if (whole || !unit) {
+      const count = Math.max(1, Math.round(n + 0.24));
+      return `${count}${space}${pluralUnit(unit, count)}`;
+    }
     return `${formatAmount(n, u)}${space}${unit}`;
   });
 }
@@ -2286,11 +2303,23 @@ function addSuggested(items) {
     const store = STORES.includes(it.laden) ? it.laden : 'both';
     byStore[store].push({ name: it.name.charAt(0).toUpperCase() + it.name.slice(1), qty: it.menge || '' });
   });
-  let added = false;
-  for (const [store, list] of Object.entries(byStore)) {
-    if (list.length) added = addParsed(list, store) || added;
+  const stores = Object.entries(byStore).filter(([, list]) => list.length);
+  // Nur ein Laden → normale Rückmeldung (mit Angebots-Hinweis)
+  if (stores.length <= 1) return stores.length ? addParsed(stores[0][1], stores[0][0]) : false;
+  // Mehrere Läden → eine gemeinsame Rückmeldung, „Rückgängig“ nimmt alles zurück
+  const ids = [];
+  let dup = 0;
+  stores.forEach(([store, list]) => {
+    const r = addParsed(list, store, { quiet: true });
+    if (r) { ids.push(...r.ids); dup += r.duplicates; }
+  });
+  const parts = [];
+  if (ids.length) parts.push(`${ids.length} Artikel hinzugefügt`);
+  if (dup) parts.push(`${dup} ${dup === 1 ? 'stand' : 'standen'} schon drauf`);
+  if (parts.length) {
+    showToast(parts.join(' · '), ids.length ? { label: 'Rückgängig', onClick: () => backend.remove(ids) } : undefined);
   }
-  return added;
+  return true;
 }
 
 function rerenderRecipes(container = els.recipes) {
