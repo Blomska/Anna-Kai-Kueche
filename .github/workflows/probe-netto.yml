@@ -22,17 +22,16 @@ jobs:
             } catch (e) { console.log('\n###', url, 'ERR', e.message); return ''; }
           }
           const ctx = (txt, re, n = 250) => { const out = []; let m; const r = new RegExp(re, 'gi'); while ((m = r.exec(txt)) && out.length < 6) out.push(txt.slice(Math.max(0, m.index - n), m.index + n).replace(/\s+/g, ' ')); return out; };
-          const base = 'https://www.netto-online.de/INTERSHOP/web/WFS/Plus-NettoDE-Site/de_DE/-/EUR/';
-          const sf = await t(base + 'ViewMMPStoreFinder-GetStoreItems?n=51.80&e=7.50&s=51.74&w=7.38', { n: 0, headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' } });
-          console.log('SF ctx:', ctx(sf, 'Olfener', 400));
-          const id = (ctx(sf, 'Olfener', 600).join(' ').match(/"(?:store_id|storeId|id|StoreID|store_no)"\s*:\s*"?(\d{3,6})/i) || [])[1];
-          console.log('STORE ID', id);
-          if (id) {
-            const pr = await t('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm/' + id, { n: 0 });
-            console.log('prospekt links:', [...new Set(pr.match(/https?:[^"' ]*(blaetter|catalog|flipbook|prospekt\.|media-central|leaflet|\.pdf)[^"' ]*/gi) || [])].slice(0, 15));
-            const fa = await t('https://www.netto-online.de/filialangebote?storeId=' + id, { n: 0, headers: { Cookie: 'netto_user_stores_id=' + id + '; StoreId=' + id } });
-            console.log('offers-ish:', ctx(fa, 'class="product|data-product|€', 150).slice(0, 4));
-            console.log('fa links:', [...new Set(fa.match(/https:\/\/www\.netto-online\.de\/INTERSHOP[^"' ]*(Offer|Angebot)[^"' ]*/gi) || [])].slice(0, 10));
+          const ff = await t('https://www.netto-online.de/filialfinder', { n: 0 });
+          const srcs = [...new Set(ff.match(/<script[^>]+src="([^"]+)"/g) || [])].map((x) => x.match(/src="([^"]+)"/)[1]);
+          console.log('scripts', srcs.length);
+          for (const src of srcs) {
+            const u = src.startsWith('http') ? src : 'https://www.netto-online.de' + src;
+            if (!/netto-online/.test(u)) continue;
+            const js = await fetch(u, { headers: UA }).then((r) => r.text()).catch(() => '');
+            const hits = ctx(js, 'storefinderJSON', 500);
+            if (hits.length) console.log('JS', u, '\n', hits.slice(0, 3).join('\n---\n'));
           }
+          console.log('inline:', ctx(ff, 'storefinderJSON', 600).slice(1, 3));
           JS
           node p.mjs
