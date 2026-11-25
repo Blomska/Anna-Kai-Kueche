@@ -2767,13 +2767,83 @@ function renderWissen() {
 
 /* ---------- Küchenhelfer (Chat) ---------- */
 
-const CHAT_LS = 'kueche:chat';
+const CHAT_LS = 'kueche:chat'; // alter, nur lokaler Verlauf (wird einmal übernommen)
 const CODE_LS = 'kueche:zugangscode';
-const chat = { messages: readJSON(CHAT_LS, []), busy: false, needsCode: false };
+const NAME_LS = 'kueche:name';
+const CHAT_MAX = 40;
+// Gemeinsamer Verlauf in Firebase (lists/{LIST_ID}/chat), Fehler nur auf diesem Handy
+const chat = { map: {}, messages: [], errors: [], busy: false, needsCode: false, migrated: false };
 
-function saveChat() {
-  chat.messages = chat.messages.slice(-30);
-  writeJSON(CHAT_LS, chat.messages.filter((m) => !m.error));
+function myName() {
+  return readJSON(NAME_LS, '');
+}
+
+/** Nachricht für Firebase säubern (keine undefined-Felder). */
+function chatDoc(m) {
+  const doc = { role: m.role, content: String(m.content || '').slice(0, 8000), createdAt: m.createdAt || Date.now() };
+  if (m.von) doc.von = m.von;
+  if (m.artikel?.length) doc.artikel = m.artikel.map((a) => ({ name: String(a.name || ''), menge: String(a.menge || ''), laden: String(a.laden || 'egal') }));
+  if (m.rezepte?.length) doc.rezepte = JSON.parse(JSON.stringify(m.rezepte));
+  if (m.merken?.length) doc.merken = m.merken.map((x) => ({ text: String(x.text || ''), wenn: String(x.wenn || ''), dann: String(x.dann || '') }));
+  if (m.gemerkt?.length) doc.gemerkt = m.gemerkt;
+  if (m.added) doc.added = true;
+  return doc;
+}
+
+function rebuildChat() {
+  const stored = Object.entries(chat.map).map(([id, m]) => ({ id, ...m }));
+  chat.messages = stored.concat(chat.errors)
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+function handleChat(map, meta = {}) {
+  chat.map = map || {};
+  // Alten Verlauf von diesem Handy einmal übernehmen
+  if (!chat.migrated && meta.fromServer) {
+    chat.migrated = true;
+    const old = readJSON(CHAT_LS, []);
+    if (Array.isArray(old) && old.length && !Object.keys(chat.map).length) {
+      const base = Date.now() - old.length * 1000;
+      const changes = {};
+      old.filter((m) => !m.error && m.role).slice(-CHAT_MAX).forEach((m, i) => {
+        changes[makeId()] = chatDoc({ ...m, createdAt: base + i * 1000, von: m.role === 'user' ? myName() : '' });
+      });
+      backend.setMap('chat', changes);
+    }
+    if (Array.isArray(old) && old.length) writeJSON(CHAT_LS, []);
+  }
+  rebuildChat();
+  if (state.view === 'helfer') renderChat();
+}
+
+function saveChatMessage(m) {
+  if (m.error) {
+    chat.errors.push(m);
+    rebuildChat();
+    return;
+  }
+  const id = m.id || makeId();
+  m.id = id;
+  const changes = { [id]: chatDoc(m) };
+  // Älteste Nachrichten entfernen, damit der Verlauf überschaubar bleibt
+  const stored = Object.entries(chat.map).sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+  stored.slice(0, Math.max(0, stored.length + 1 - CHAT_MAX)).forEach(([oldId]) => { changes[oldId] = null; });
+  chat.map = { ...chat.map, [id]: changes[id] };
+  backend.setMap('chat', changes);
+  rebuildChat();
+}
+
+function updateChatMessage(m) {
+  if (!m?.id || m.error) return;
+  backend.setMap('chat', { [m.id]: chatDoc(m) });
+}
+
+function clearChat() {
+  const changes = Object.fromEntries(Object.keys(chat.map).map((id) => [id, null]));
+  chat.errors = [];
+  chat.map = {};
+  if (Object.keys(changes).length) backend.setMap('chat', changes);
+  rebuildChat();
 }
 
 /** Sehr einfache, sichere Formatierung: **fett** und Zeilenumbrüche. */
@@ -2808,6 +2878,22 @@ function renderChat() {
     els.chatLog.innerHTML = '';
     return;
   }
+  if (!myName()) {
+    els.chatSetup.hidden = false;
+    els.chatSetup.innerHTML = `
+      <div class="empty-card">
+        <p><strong>Wer schreibt auf diesem Handy?</strong></p>
+        <p>Anna und Kai sehen denselben Verlauf – so steht dabei, wer gefragt hat.</p>
+        <div class="name-pick">
+          <button type="button" class="btn btn--tinted" data-chat-name="Anna">Anna</button>
+          <button type="button" class="btn btn--tinted" data-chat-name="Kai">Kai</button>
+        </div>
+      </div>`;
+    els.chatForm.hidden = true;
+    els.chatIdeas.hidden = true;
+    els.chatLog.innerHTML = '';
+    return;
+  }
   els.chatSetup.hidden = true;
   els.chatForm.hidden = false;
   els.chatIdeas.hidden = chat.messages.length > 0;
@@ -2815,7 +2901,10 @@ function renderChat() {
   const onList = onListNames();
   const stems = avoidStems();
   const parts = chat.messages.map((m, mi) => {
-    if (m.role === 'user') return `<div class="bubble bubble--me">${escapeHtml(m.content)}</div>`;
+    if (m.role === 'user') {
+      const mine = !m.von || m.von === myName();
+      return `${mine ? '' : `<p class="bubble__who">${escapeHtml(m.von)}</p>`}<div class="bubble bubble--me${mine ? '' : ' bubble--other'}">${escapeHtml(m.content)}</div>`;
+    }
     let html = `<div class="bubble bubble--bot${m.error ? ' bubble--error' : ''}">${formatBotText(m.content)}</div>`;
     (m.rezepte || []).forEach((r, ri) => { html += recipeCardHtml(r, `c-${mi}-${ri}`, { mode: 'chat' }); });
     if (m.merken?.length) {
@@ -2873,13 +2962,17 @@ function renderChat() {
 async function sendChat(text) {
   const question = String(text || '').trim();
   if (!question || chat.busy || !CHAT_URL) return;
-  chat.messages.push({ role: 'user', content: question });
+  chat.errors = [];
+  const userMsg = { role: 'user', content: question, von: myName(), createdAt: Date.now() };
+  saveChatMessage(userMsg);
   chat.busy = true;
-  saveChat();
   renderChat();
   els.chatLog.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-  const history = chat.messages.filter((m) => !m.error).slice(-16).map((m) => ({ role: m.role, content: m.content }));
+  const history = chat.messages.filter((m) => !m.error).slice(-16).map((m) => ({
+    role: m.role,
+    content: m.role === 'user' && m.von ? `${m.von}: ${m.content}` : m.content
+  }));
   const liste = state.items.filter((i) => !i.done).map((i) => `${i.qty ? `${i.qty} ` : ''}${i.name}`);
   try {
     const res = await fetch(`${CHAT_URL.replace(/\/$/, '')}/chat`, {
@@ -2890,13 +2983,16 @@ async function sendChat(text) {
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
       chat.needsCode = true;
-      chat.messages.pop();
+      backend.setMap('chat', { [userMsg.id]: null });
+      delete chat.map[userMsg.id];
+      rebuildChat();
       showToast('Der Zugangscode stimmt nicht – bitte nochmal eingeben.');
     } else if (!res.ok) {
-      chat.messages.push({ role: 'assistant', content: data.fehler || 'Der Helfer ist gerade nicht erreichbar.', error: true });
+      saveChatMessage({ role: 'assistant', content: data.fehler || 'Der Helfer ist gerade nicht erreichbar.', error: true, createdAt: Date.now() });
     } else {
-      chat.messages.push({
+      saveChatMessage({
         role: 'assistant',
+        createdAt: Date.now(),
         content: data.antwort || '',
         artikel: Array.isArray(data.artikel) ? data.artikel : [],
         rezepte: Array.isArray(data.rezepte) ? data.rezepte.filter((r) => r && r.titel && Array.isArray(r.zutaten)) : [],
@@ -2904,10 +3000,9 @@ async function sendChat(text) {
       });
     }
   } catch {
-    chat.messages.push({ role: 'assistant', content: 'Keine Verbindung – seid ihr online? Gleich nochmal versuchen.', error: true });
+    saveChatMessage({ role: 'assistant', content: 'Keine Verbindung – seid ihr online? Gleich nochmal versuchen.', error: true, createdAt: Date.now() });
   }
   chat.busy = false;
-  saveChat();
   renderChat();
   els.chatLog.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
@@ -2924,7 +3019,7 @@ function addChatSuggestion(mi) {
   }
   addSuggested(chosen);
   msg.added = true;
-  saveChat();
+  updateChatMessage(msg);
   renderChat();
 }
 
@@ -3192,7 +3287,7 @@ function bindEvents() {
       if (item) {
         addWissen(item);
         msg.gemerkt = [...(msg.gemerkt || []), xi];
-        saveChat();
+        updateChatMessage(msg);
         renderChat();
       }
       return;
@@ -3200,12 +3295,21 @@ function bindEvents() {
     const add = e.target.closest('[data-chat-add]');
     if (add) addChatSuggestion(Number(add.dataset.chatAdd));
     if (e.target.closest('#chatReset')) {
-      chat.messages = [];
-      saveChat();
+      const before = Object.entries(chat.map).map(([id, m]) => [id, m]);
+      clearChat();
       renderChat();
+      if (before.length) {
+        showToast('Verlauf für euch beide geleert', { label: 'Rückgängig', onClick: () => backend.setMap('chat', Object.fromEntries(before)) });
+      }
     }
   });
   els.chatSetup.addEventListener('click', (e) => {
+    const who = e.target.closest('[data-chat-name]');
+    if (who) {
+      writeJSON(NAME_LS, who.dataset.chatName);
+      renderChat();
+      return;
+    }
     if (!e.target.closest('#familyCodeSave')) return;
     const code = $('#familyCode', els.chatSetup)?.value.trim();
     if (!code) return;
@@ -3466,6 +3570,7 @@ function init() {
   renderWissen();
   backend.startWissen(handleWissen);
   backend.startMap('kochbuch', handleKochbuch);
+  backend.startMap('chat', handleChat);
   backend.start(handleItems, setStatus);
 }
 

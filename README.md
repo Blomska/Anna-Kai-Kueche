@@ -84,6 +84,13 @@ service cloud.firestore {
         && request.resource.data.zutaten is list
         && request.resource.data.zutaten.size() <= 60;
     }
+    match /lists/{listId}/chat/{msgId} {
+      allow read, delete: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.role in ['user', 'assistant']
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 8000;
+    }
     match /lists/{listId}/wissen/{entryId} {
       allow read, delete: if request.auth != null;
       allow create, update: if request.auth != null
