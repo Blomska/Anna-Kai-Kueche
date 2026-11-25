@@ -629,7 +629,7 @@ function autoOffer(name) {
   return result;
 }
 
-/** Angebot für einen Artikel: selbst markiert (Familie) hat Vorrang vor automatisch. */
+/** Angebot für einen Artikel: selbst markiert hat Vorrang vor automatisch. */
 function getOffer(name) {
   return activeOffer(name) || autoOffer(name);
 }
@@ -971,7 +971,7 @@ function addFromText(text, store = state.addStore) {
 /** Fügt bereits zerlegte Artikel [{ name, qty }] hinzu. */
 function addParsed(parsed, store = state.addStore, { quiet = false } = {}) {
   if (!parsed.length) return false;
-  // Familien-Gedächtnis: z. B. "Milch" → "Milch 1,5 %"
+  // Gedächtnis (Vorlieben): z. B. "Milch" → "Milch 1,5 %"
   parsed = parsed.map((p) => ({ ...p, name: applyWissen(p.name) }));
 
   const openByName = new Map(state.items.filter((i) => !i.done).map((i) => [normalize(i.name), i]));
@@ -1969,15 +1969,34 @@ function avoidStems() {
   const stems = new Set();
   (state.wissen || []).forEach((w) => {
     (Array.isArray(w.meiden) ? w.meiden : []).forEach((m) => stems.add(normalize(m)));
-    const m = normalize(w.text || '').match(/^(?:bitte\s+)?(?:keine?n?|kein|ohne)\s+([a-zäöüß-]{3,})/);
-    if (m) stems.add(m[1].replace(/(en|n|s|e)$/, ''));
+    // Auch mitten im Satz: „Anna mag keine Pilze.", „Kai isst keinen Fisch"
+    for (const m of normalize(w.text || '').matchAll(/(?:^|[\s,(])(?:keine?[nrs]?|ohne)\s+([a-zäöüß]{3,})/g)) {
+      const stem = m[1].replace(/(en|n|s|e)$/, '');
+      if (!AVOID_STOPWORDS.has(stem)) stems.add(stem);
+    }
   });
+  // Oberbegriffe: „keine Pilze" meint auch Champignons, „kein Fisch" auch Lachs
+  [...stems].forEach((st) => (AVOID_SYNONYMS[st] || []).forEach((x) => stems.add(x)));
   return [...stems].filter((s) => s.length >= 3);
 }
 
+const AVOID_SYNONYMS = {
+  pilz: ['champignon', 'egerling', 'pfifferling', 'shiitake', 'kräuterseitling', 'austernpilz'],
+  fisch: ['lachs', 'thunfisch', 'kabeljau', 'seelachs', 'forelle', 'hering', 'makrele', 'dorsch', 'pangasius', 'scholle', 'sardine', 'sardelle'],
+  meeresfrücht: ['garnele', 'shrimp', 'muschel', 'tintenfisch', 'calamari', 'krabbe'],
+  schweinefleisch: ['schwein', 'speck', 'schinken', 'bacon', 'salami', 'mett'],
+  fleisch: ['hähnchen', 'huhn', 'pute', 'rind', 'schwein', 'hack', 'speck', 'schinken', 'wurst', 'salami', 'lamm'],
+  nüss: ['nuss', 'mandel', 'cashew', 'pistazie', 'haselnuss', 'walnuss'],
+  koriand: ['koriander']
+};
+
+// Wörter nach „keine …", die keine Zutat sind („keine Zeit", „kein Problem")
+const AVOID_STOPWORDS = new Set(['zeit', 'lust', 'problem', 'ahnung', 'angst', 'ausnahme', 'mikrowell', 'ofen', 'thermomix', 'airfryer', 'heißluftfritteus', 'tag', 'woch', 'abend', 'resten', 'rest', 'eile', 'fertiggericht', 'frühling', 'lauchzwiebel']);
+
 function isAvoided(name, stems = avoidStems()) {
   const n = normalize(name);
-  return stems.some((s) => n.includes(s));
+  // „laktosefreie Milch" ist trotz „keine Laktose" in Ordnung
+  return stems.some((s) => n.includes(s) && !new RegExp(`${s}\\w{0,2}frei`).test(n));
 }
 
 /* ---------- Passt zu den Angeboten ---------- */
@@ -2412,7 +2431,7 @@ function handleRecipeClick(e, container) {
   return false;
 }
 
-/* ---------- Familien-Gedächtnis ---------- */
+/* ---------- Gedächtnis (Vorlieben) ---------- */
 
 const WISSEN_CACHE = `kueche:wissen-cache:${LIST_ID}`;
 
@@ -2993,7 +3012,7 @@ function bindEvents() {
     renderWeeklyCheck();
   });
 
-  // Familien-Gedächtnis
+  // Gedächtnis (Vorlieben)
   $('#memoryList').addEventListener('click', (e) => {
     const del = e.target.closest('[data-wissen-del]');
     if (del) removeWissen(del.dataset.wissenDel);
