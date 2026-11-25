@@ -1,0 +1,9 @@
+{
+  "name": "anna-kai-kueche",
+  "private": true,
+  "type": "module",
+  "description": "Anna & Kai Küche – Hilfsskript zum Abrufen der Prospekte",
+  "scripts": {
+    "prospekte": "node scripts/update-prospekte.mjs"
+  }
+}

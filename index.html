@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Anna &amp; Kai Küche</title>
+  <meta name="description" content="Einkaufsliste, Prospekte und Kochbuch für Anna und Kai in Lüdinghausen.">
+  <meta name="theme-color" content="#FAF8FC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16131C" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Küche">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <!-- SVG-Symbole (Linien-Icons im iOS-Stil) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.6V4.5a1 1 0 0 1 1-1h8.1a1 1 0 0 1 .7.3l7.4 7.4a1 1 0 0 1 0 1.4l-8.1 8.1a1 1 0 0 1-1.4 0l-7.4-7.4a1 1 0 0 1-.3-.7z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="8.3" cy="8.3" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10.3 5 7.7 4.3 4 4.5v13.5c3.7-.2 6.3.5 8 2 1.7-1.5 4.3-2.2 8-2V4.5c-3.7-.2-6.3.5-8 2zM12 6.5V20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.4-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.6 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path fill="currentColor" d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 1 0-7 0v6A3.5 3.5 0 0 0 12 15zm6-3.5a1 1 0 1 0-2 0 4 4 0 0 1-8 0 1 1 0 1 0-2 0 6 6 0 0 0 5 5.91V20H8.5a1 1 0 1 0 0 2h7a1 1 0 1 0 0-2H13v-2.59a6 6 0 0 0 5-5.91z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11M8 7.5l4-4 4 4M6 11H5a1 1 0 0 0-1 1v7.5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V12a1 1 0 0 0-1-1h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8 19l-4 1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <div class="app">
+    <!-- Kopfzeile -->
+    <header class="topbar">
+      <div class="topbar__row">
+        <div class="topbar__title">
+          <p class="topbar__hello" id="hello">Hallo</p>
+          <h1 id="viewTitle">Einkaufsliste</h1>
+        </div>
+        <button class="iconbtn wake" id="wakeToggle" type="button" aria-pressed="false" hidden
+                aria-label="Display anlassen" title="Verhindert, dass das Display beim Einkaufen ausgeht">
+          <svg width="22" height="22" aria-hidden="true"><use href="#i-sun"/></svg>
+        </button>
+      </div>
+      <p class="sync" id="syncStatus" role="status" aria-live="polite">
+        <span class="sync__dot"></span><span class="sync__text">Verbinde …</span>
+      </p>
+    </header>
+
+    <main>
+      <!-- ============ Ansicht: Liste ============ -->
+      <section class="view" data-view="liste" aria-label="Einkaufsliste">
+        <section class="card composer" aria-label="Artikel hinzufügen">
+          <form id="addForm" autocomplete="off">
+            <p class="greeting" id="greeting">Was brauchen wir?</p>
+            <label for="itemInput" class="visually-hidden">Was wird gebraucht?</label>
+            <div class="composer__row">
+              <textarea id="itemInput" rows="1" enterkeyhint="done"
+                        placeholder="z. B. Skyr, Eier, Hähnchenbrust"
+                        aria-describedby="inputHint"></textarea>
+              <button type="button" class="mic" id="micBtn" aria-label="Einsprechen" aria-pressed="false" hidden>
+                <svg width="22" height="22" aria-hidden="true"><use href="#i-mic"/></svg>
+              </button>
+            </div>
+            <div class="suggest" id="suggestions" role="listbox" aria-label="Vorschläge" hidden></div>
+            <p class="hint" id="inputHint">Mehrere Sachen mit Komma trennen.</p>
+
+            <div class="seg seg--store" role="radiogroup" aria-label="Für welchen Laden?" id="storePicker">
+              <button type="button" class="is-active" role="radio" aria-checked="true" data-store="both">Egal</button>
+              <button type="button" role="radio" aria-checked="false" data-store="aldi">Aldi</button>
+              <button type="button" role="radio" aria-checked="false" data-store="marktkauf">Marktkauf</button>
+              <button type="button" role="radio" aria-checked="false" data-store="rewe">REWE</button>
+            </div>
+
+            <button type="submit" class="btn btn--primary btn--block" id="addBtn">Auf die Liste</button>
+          </form>
+
+          <div class="weekly" id="weeklyWrap" hidden>
+            <h2 class="section-label" id="weeklyTitle">Samstag ist Wocheneinkauf – fehlt noch was?</h2>
+            <div class="chips" id="weekly"></div>
+            <div class="weekly__actions">
+              <button type="button" class="btn btn--tinted" id="weeklyAll">Alle auf die Liste</button>
+              <button type="button" class="btn btn--plain" id="weeklyHide">Diese Woche ausblenden</button>
+            </div>
+          </div>
+
+          <div class="favorites" id="favoritesWrap" hidden>
+            <h2 class="section-label">Oft gekauft</h2>
+            <div class="chips" id="favorites"></div>
+          </div>
+        </section>
+
+        <!-- Laden-Filter -->
+        <nav class="seg seg--filter" role="tablist" aria-label="Laden-Filter" id="filterTabs">
+          <button type="button" role="tab" class="is-active" aria-selected="true" data-filter="all">
+            Alle <span class="seg__count" data-count="all">0</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-filter="aldi">
+            Aldi <span class="seg__count" data-count="aldi">0</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-filter="marktkauf">
+            Marktkauf <span class="seg__count" data-count="marktkauf">0</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-filter="rewe">
+            REWE <span class="seg__count" data-count="rewe">0</span>
+          </button>
+        </nav>
+
+        <section id="list" class="list" aria-live="polite"></section>
+
+        <div class="empty" id="emptyState" hidden>
+          <p class="empty__title">Alles erledigt</p>
+          <p class="empty__text">Die Liste ist leer. Oben einfach eintippen, was gebraucht wird.</p>
+        </div>
+
+        <section class="done" id="doneSection" hidden>
+          <button type="button" class="done__toggle" id="doneToggle" aria-expanded="false" aria-controls="doneList">
+            <span>Im Einkaufswagen (<span id="doneCount">0</span>)</span>
+            <svg class="done__chev" width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg>
+          </button>
+          <div id="doneList" class="done__list" hidden></div>
+          <button type="button" class="btn btn--destructive btn--block" id="clearDoneBtn" hidden>Abgehakte löschen</button>
+        </section>
+
+        <div class="share">
+          <button type="button" class="btn btn--plain btn--block" id="shareBtn">
+            <svg width="20" height="20" aria-hidden="true"><use href="#i-share"/></svg>
+            Liste per WhatsApp teilen
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ Ansicht: Angebote ============ -->
+      <section class="view" data-view="angebote" aria-label="Angebote" hidden>
+        <p class="view__sub">Aldi Nord, Marktkauf Nientied und REWE in Lüdinghausen.</p>
+        <div class="pcards">
+          <button type="button" class="pcard pcard--aldi" data-open-prospekt="aldi">
+            <span class="pcard__cover"><img id="coverAldi" alt="" loading="lazy" hidden><span class="pcard__logo">ALDI</span></span>
+            <span class="pcard__body"><strong>Aldi Nord</strong><small id="validAldi">Prospekt ansehen</small></span>
+          </button>
+          <button type="button" class="pcard pcard--marktkauf" data-open-prospekt="marktkauf">
+            <span class="pcard__cover"><img id="coverMarktkauf" alt="" loading="lazy" hidden><span class="pcard__logo">MK</span></span>
+            <span class="pcard__body"><strong>Marktkauf</strong><small id="validMarktkauf">Prospekt ansehen</small></span>
+          </button>
+          <button type="button" class="pcard pcard--rewe" data-open-prospekt="rewe">
+            <span class="pcard__cover"><img id="coverRewe" alt="" loading="lazy" hidden><span class="pcard__logo">REWE</span></span>
+            <span class="pcard__body"><strong>REWE</strong><small id="validRewe">Prospekt ansehen</small></span>
+          </button>
+        </div>
+
+        <div class="deals" id="dealsWrap" hidden>
+          <h2 class="section-label">Eure Sachen im Angebot</h2>
+          <div class="deals__row" id="deals"></div>
+        </div>
+
+        <button type="button" class="btn btn--tinted btn--block" id="offerManageBtn">Angebot selbst markieren</button>
+        <p class="view__note">Im Prospekt etwas gesehen, das die App nicht automatisch erkennt (z. B. bei REWE)? Hier eintragen – es gilt bis Samstag und erscheint auf der Liste und im Kochbuch.</p>
+      </section>
+
+      <!-- ============ Ansicht: Kochbuch ============ -->
+      <section class="view" data-view="kochbuch" aria-label="Kochbuch" hidden>
+        <div id="recipes" class="recipes"></div>
+      </section>
+
+      <!-- ============ Ansicht: Vorlieben ============ -->
+      <section class="view" data-view="vorlieben" aria-label="Vorlieben" hidden>
+        <p class="view__sub">Das berücksichtigt die App beim Eintragen und im Kochbuch.</p>
+        <section class="card memory">
+          <ul class="memory__list" id="memoryList"></ul>
+          <form class="memory__form" id="memoryForm" autocomplete="off">
+            <input type="text" id="memoryInput" maxlength="240" placeholder="z. B. Milch immer laktosefrei" aria-label="Neue Vorliebe">
+            <button type="submit" class="btn btn--primary">Merken</button>
+          </form>
+          <p class="memory__note" id="memoryNote" hidden>Gerade nur auf diesem Handy gespeichert – die Firestore-Regel für „wissen" fehlt noch (siehe README).</p>
+        </section>
+        <p class="view__note">Tipp: Schreibt „<strong>keine Pilze</strong>“, dann werden Pilze in Rezepten markiert und nicht automatisch auf die Liste gesetzt.</p>
+      </section>
+
+      <footer class="foot">
+        <p id="modeInfo"></p>
+      </footer>
+    </main>
+
+    <!-- Tab-Bar -->
+    <nav class="tabbar" id="bottomNav" aria-label="Bereiche">
+      <button type="button" class="tabbar__btn is-active" data-nav="liste" aria-current="page">
+        <svg width="26" height="26" aria-hidden="true"><use href="#i-list"/></svg><span>Liste</span>
+        <span class="tabbar__badge" id="navBadgeListe" hidden></span>
+      </button>
+      <button type="button" class="tabbar__btn" data-nav="angebote">
+        <svg width="26" height="26" aria-hidden="true"><use href="#i-tag"/></svg><span>Angebote</span>
+        <span class="tabbar__badge" id="navBadgeAngebote" hidden></span>
+      </button>
+      <button type="button" class="tabbar__btn" data-nav="kochbuch">
+        <svg width="26" height="26" aria-hidden="true"><use href="#i-book"/></svg><span>Kochbuch</span>
+        <span class="tabbar__badge" id="navBadgeKochbuch" hidden></span>
+      </button>
+      <button type="button" class="tabbar__btn" data-nav="vorlieben">
+        <svg width="26" height="26" aria-hidden="true"><use href="#i-heart"/></svg><span>Vorlieben</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Artikel bearbeiten -->
+  <dialog id="editDialog" class="sheet" aria-labelledby="editTitle">
+    <form method="dialog" id="editForm" class="sheet__inner">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="editTitle">Artikel bearbeiten</h2>
+      <div class="field-row">
+        <label class="field field--grow"><span>Artikel</span>
+          <input type="text" id="editName" required maxlength="80" autocomplete="off"></label>
+        <label class="field field--qty"><span>Menge</span>
+          <input type="text" id="editQty" maxlength="20" placeholder="z. B. 2×" autocomplete="off"></label>
+      </div>
+      <p class="field-label">Laden</p>
+      <div class="seg seg--store" role="radiogroup" aria-label="Laden" id="editStore">
+        <button type="button" role="radio" data-store="both">Egal</button>
+        <button type="button" role="radio" data-store="aldi">Aldi</button>
+        <button type="button" role="radio" data-store="marktkauf">Marktkauf</button>
+        <button type="button" role="radio" data-store="rewe">REWE</button>
+      </div>
+      <p class="field-label">Kategorie</p>
+      <div class="cat-grid" role="radiogroup" aria-label="Kategorie" id="editCategory"></div>
+      <div class="sheet__actions">
+        <button type="button" class="btn btn--destructive-plain" id="editDelete">Löschen</button>
+        <button type="button" class="btn btn--plain" id="editCancel">Abbrechen</button>
+        <button type="submit" class="btn btn--primary" id="editSave" value="save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Rezept eintragen / bearbeiten -->
+  <dialog id="recipeDialog" class="sheet sheet--tall" aria-labelledby="recipeFormTitle">
+    <form id="recipeForm" class="sheet__inner" autocomplete="off">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="recipeFormTitle">Rezept eintragen</h2>
+      <label class="field"><span>Titel</span>
+        <input type="text" id="rfTitel" required maxlength="120" placeholder="z. B. Hähnchen-Curry mit Kichererbsen"></label>
+      <label class="field"><span>Kurzbeschreibung (optional)</span>
+        <input type="text" id="rfBeschreibung" maxlength="240" placeholder="z. B. Cremig, schnell, viel Eiweiß"></label>
+      <div class="field-row">
+        <label class="field"><span>Portionen</span>
+          <input type="number" id="rfPortionen" min="1" max="20" value="2" inputmode="numeric"></label>
+        <label class="field"><span>Minuten</span>
+          <input type="number" id="rfDauer" min="0" max="600" placeholder="30" inputmode="numeric"></label>
+      </div>
+      <label class="field"><span>Kategorie</span>
+        <select id="rfKategorie"></select></label>
+      <label class="field"><span>Zutaten – eine pro Zeile</span>
+        <textarea id="rfZutaten" rows="6" required placeholder="500 g Hähnchenbrust&#10;1 Dose Kichererbsen&#10;200 ml Kokosmilch&#10;Salz (Vorrat)"></textarea></label>
+      <p class="field-hint">Menge vorne, Zutat dahinter. „(Vorrat)“ am Ende = haben wir meistens da.</p>
+      <label class="field"><span>Zubereitung – ein Schritt pro Zeile</span>
+        <textarea id="rfSchritte" rows="5" placeholder="Hähnchen würfeln und anbraten.&#10;Kichererbsen und Kokosmilch dazu, 10 Min. köcheln."></textarea></label>
+      <div class="sheet__actions sheet__actions--sticky">
+        <button type="button" class="btn btn--plain" id="rfCancel">Abbrechen</button>
+        <button type="submit" class="btn btn--primary" id="rfSave">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Prospekt-Ansicht (Vollbild) -->
+  <dialog id="prospektDialog" class="viewer" aria-labelledby="viewerTitle">
+    <div class="viewer__head">
+      <div class="viewer__titlerow">
+        <h2 id="viewerTitle">Prospekt</h2>
+        <button type="button" class="iconbtn viewer__close" id="viewerClose" aria-label="Schließen">
+          <svg width="20" height="20" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+      <div class="seg" id="viewerWeeks" role="tablist" aria-label="Woche"></div>
+      <div class="seg" id="viewerTabs" role="tablist" aria-label="Ansicht" hidden>
+        <button type="button" role="tab" data-tab="angebote">Angebote</button>
+        <button type="button" role="tab" data-tab="prospekt">Prospekt</button>
+      </div>
+    </div>
+    <div class="viewer__body" id="viewerBody"></div>
+  </dialog>
+
+  <!-- Angebote markieren -->
+  <dialog id="offerDialog" class="sheet sheet--tall" aria-labelledby="offerTitle">
+    <form id="offerForm" class="sheet__inner">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="offerTitle">Angebote dieser Woche</h2>
+      <p class="sheet__hint">
+        Im Prospekt gesehen? Laden antippen, Preis optional.
+        Gilt automatisch bis <strong id="offerUntil">Samstag</strong>.
+      </p>
+      <div class="offer-new">
+        <input type="text" id="offerNewName" maxlength="80" placeholder="Anderer Artikel …" autocomplete="off"
+               aria-label="Weiteren Artikel für Angebot hinzufügen">
+        <button type="button" class="btn btn--tinted" id="offerNewAdd" aria-label="Hinzufügen">
+          <svg width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg>
+        </button>
+      </div>
+      <div id="offerRows" class="offer-rows"></div>
+      <div class="sheet__actions sheet__actions--sticky">
+        <button type="button" class="btn btn--plain" id="offerCancel">Abbrechen</button>
+        <button type="submit" class="btn btn--primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+    <span id="toastText"></span>
+    <button type="button" id="toastAction" class="toast__action" hidden>Rückgängig</button>
+  </div>
+
+  <noscript>
+    <p style="padding:24px;font-size:18px">Bitte JavaScript aktivieren, damit die App funktioniert.</p>
+  </noscript>
+</body>
+</html>
