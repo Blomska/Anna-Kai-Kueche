@@ -40,8 +40,13 @@ jobs:
           let fa = await r.text();
           if (r.status >= 300 && r.status < 400) { r = await go(new URL(r.headers.get('location'), 'https://www.netto-online.de').href); fa = await r.text(); }
           console.log('FA', r.status, fa.length, 'Olfener?', /Olfener|6061/.test(fa), 'prices', (fa.match(/\d+[.,]\d{2}\s*(€|&euro;)/g) || []).length);
-          console.log('tiles:', ctx(fa, 'product[-_]?(tile|title|name)', 160).slice(0, 4));
-          const pr2 = await (await go('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm')).text();
-          console.log('flipbooks:', [...new Set(pr2.match(/https?:[^"' <>()]*flipbook[^"' <>()]*/gi) || [])].slice(0, 6), ctx(pr2, 'data-catalog|flipbook', 200).slice(0, 3));
+          const parts = fa.split('tc-store-product-tile js-store-product-tile');
+          console.log('TILES', parts.length - 1);
+          console.log('TILE1', parts[1].slice(0, 4500).replace(/\s+/g, ' '));
+          console.log('TILE50', (parts[50] || '').slice(0, 2500).replace(/\s+/g, ' '));
+          console.log('pages', [...new Set(fa.match(/js-store-products-page-\d+/g) || [])]);
+          console.log('headers', [...new Set(fa.match(/<h[23][^>]*>[^<]{3,60}<\/h[23]>/g) || [])].slice(0, 30));
+          console.log('periods', [...new Set(fa.match(/g(ü|%C3%BC)ltig[^<"&]{5,60}/gi) || [])].slice(0, 10));
+          console.log('before first tile', parts[0].slice(-1500).replace(/\s+/g, ' '));
           JS
           node p.mjs
