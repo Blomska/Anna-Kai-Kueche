@@ -15,13 +15,14 @@ App-Adresse (nach dem ersten Deploy): **https://blomska.github.io/Anna-Kai-Kuech
   - **Angebot selbst markieren:** Im Prospekt etwas gesehen? Laden antippen, Preis optional – gilt bis Samstag und erscheint auf der Liste und im Kochbuch.
   - Steht etwas von eurer Liste im Angebot, bekommt es automatisch ein Angebots-Schild mit Preis.
 - **Kochbuch:**
+  - **Ideen der Woche:** Gemini schlägt jede Woche 5 Rezepte aus den aktuellen Angeboten vor – ohne Zwiebeln, eiweißreich. Mit „Ins Kochbuch" übernehmen.
   - **Rezept eintragen** über ein Formular (Titel, Portionen, Zeit, Kategorie, Zutaten, Zubereitung). Rezepte lassen sich später bearbeiten.
   - **Passt zu den Angeboten:** Rezepte aus dem Kochbuch, deren Zutaten gerade im Angebot sind (Stichwort-Abgleich), die meisten Treffer zuerst.
   - **Import** aus `data/rezepte-import.json` oder direkt aus einer JSON-Datei vom Handy („JSON importieren").
   - Lieblingsrezepte, Suche, Notizen, Portionen umrechnen, ausgewählte Zutaten mit einem Tipp auf die Liste.
-- **Vorlieben:** Startwissen steht in `wissen.js` (keine Zwiebeln, eiweißreich). Einträge wie „Keine Pilze" sorgen dafür, dass passende Zutaten in Rezepten markiert und nicht automatisch auf die Liste gesetzt werden.
-
-Es gibt **keine eingebaute KI** und keine Secrets.
+- **Küchenhelfer (Chat):** z. B. „Was können wir diese Woche eiweißreich kochen?" – mit Vorschlägen zum Abhaken, Rezeptkarten und „Soll ich mir das merken?".
+- **Marktkauf-Produkte je Seite:** Gemini liest den Marktkauf-Prospekt, unter jeder Seite lassen sich die Produkte antippen.
+- **Vorlieben:** Startwissen steht in `wissen.js` (keine Zwiebeln, eiweißreich). Helfer und Ideen der Woche halten sich daran. Einträge wie „Keine Pilze" sorgen außerdem dafür, dass passende Zutaten in Rezepten markiert und nicht automatisch auf die Liste gesetzt werden.
 
 ## Dateien
 
@@ -35,7 +36,11 @@ Es gibt **keine eingebaute KI** und keine Secrets.
 | `wissen.js` | Startwissen (Vorlieben) und optionaler Wocheneinkauf |
 | `data/rezepte-import.json` | Rezepte zum Importieren (Beispiel liegt bei) |
 | `scripts/update-prospekte.mjs` | Holt Prospekte und Angebote nach `data/prospekte.json` |
-| `.github/workflows/deploy.yml` | Holt zweimal täglich die Prospekte und veröffentlicht die App |
+| `scripts/ki-auswertung.mjs` | Gemini: Marktkauf-Produkte aus dem Prospekt + Ideen der Woche (`data/rezepte.json`) |
+| `lib/gemini.mjs` | Gemeinsamer Gemini-Baustein (strukturierte Antworten, automatische Modellwahl) |
+| `worker/` | Küchenhelfer als Cloudflare Worker `anna-kai-helfer` |
+| `.github/workflows/deploy.yml` | Holt zweimal täglich die Prospekte, startet die KI-Auswertung und veröffentlicht die App |
+| `.github/workflows/chat-helfer.yml` | Veröffentlicht den Küchenhelfer bei Cloudflare |
 | `manifest.json`, `sw.js`, `icons/` | App-Installation und Offline-Betrieb |
 
 ---
@@ -94,7 +99,29 @@ service cloud.firestore {
 
 **Settings → Pages → Source: GitHub Actions** (ist schon eingestellt). Nach jedem Speichern auf `main` und zweimal täglich läuft der Workflow „Prospekte aktualisieren & veröffentlichen". Von Hand: **Actions → Workflow → Run workflow**.
 
-### 4. Aufs Handy
+### 4. KI einrichten (Gemini + Küchenhelfer)
+
+Alles läuft über **eigene** Schlüssel – das Gemini-Kontingent von Mama-Einkauf wird nicht benutzt.
+
+Auf GitHub: **Settings → Secrets and variables → Actions → New repository secret**, vier Secrets anlegen:
+
+| Name | Inhalt |
+|---|---|
+| `GEMINIAPIKEYANNA` | Gemini-Schlüssel von <https://aistudio.google.com> (Get API key) |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare-Token mit der Vorlage „Edit Cloudflare Workers" (das von Mama-Einkauf geht auch) |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare-Konto-ID (Dashboard rechts, „Account ID") |
+| `FAMILY_CODE` | frei gewählter Zugangscode für den Helfer – neu, nicht der von Mama-Einkauf |
+
+Danach:
+1. **Actions → „Chat-Helfer veröffentlichen" → Run workflow.** Am Ende des Protokolls steht die Adresse, z. B. `https://anna-kai-helfer.<name>.workers.dev`. In `config.js` ist `https://anna-kai-helfer.blomenkemper-kai.workers.dev` eingetragen – weicht die Adresse ab, dort ändern.
+2. **Actions → „Prospekte aktualisieren & veröffentlichen" → Run workflow.** Erst dieser Lauf erstellt die Ideen der Woche (bei normalen Code-Uploads fragt der Workflow Gemini nicht neu, um das Kontingent zu schonen).
+3. In der App unter **Helfer** einmal den Zugangscode eingeben.
+
+Ein bestimmtes Gemini-Modell lässt sich mit der GitHub-**Variable** `GEMINI_MODEL` erzwingen (für den Chat: `GEMINI_MODEL` unter `[vars]` in `worker/wrangler.toml`). Ohne Angabe wählt der Baustein automatisch ein verfügbares Flash-Modell.
+
+**Kosten & Datenschutz:** Gemini-Flash hat ein kostenloses Kontingent mit Ratenlimits (<https://ai.google.dev/gemini-api/docs/pricing>). Im kostenlosen Kontingent darf Google die Eingaben zur Verbesserung seiner Produkte nutzen – nichts Vertrauliches in den Chat schreiben. Cloudflare Worker sind bis 100.000 Anfragen pro Tag kostenlos.
+
+### 5. Aufs Handy
 
 - **iPhone (Safari):** Seite öffnen → Teilen-Symbol → **Zum Home-Bildschirm**
 - **Android (Chrome):** Seite öffnen → ⋮ → **App installieren**

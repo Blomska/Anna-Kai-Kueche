@@ -2,8 +2,13 @@
   "name": "anna-kai-kueche",
   "private": true,
   "type": "module",
-  "description": "Anna & Kai Küche – Hilfsskript zum Abrufen der Prospekte",
+  "description": "Anna & Kai Küche – Hilfsskripte (Prospekte, KI-Rezepte) und Küchenhelfer-Worker",
   "scripts": {
-    "prospekte": "node scripts/update-prospekte.mjs"
+    "prospekte": "node scripts/update-prospekte.mjs",
+    "ki": "node scripts/ki-auswertung.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "3.6.1",
+    "zod": "4.6.7"
   }
 }

@@ -40,6 +40,13 @@ export const FAVORITEN = [];
 /** Begrüßung oben in der App: "Guten Morgen, Anna & Kai" */
 export const GREETING_NAME = 'Anna & Kai';
 
+/**
+ * Adresse des Küchenhelfers (Cloudflare Worker "anna-kai-helfer", siehe README).
+ * Steht nach dem ersten Lauf von "Chat-Helfer veröffentlichen" im Actions-Protokoll.
+ * Leer lassen = Helfer ausgeblendet.
+ */
+export const CHAT_URL = 'https://anna-kai-helfer.blomenkemper-kai.workers.dev';
+
 /** Prospekt-Links (öffnen in neuem Tab). */
 export const OFFER_LINKS = {
   // Offizielle EDEKA-Prospektseite von Marktkauf Nientied (EDEKA Markt-ID 10008010)

@@ -35,7 +35,7 @@ import {
   CATEGORIES, CATEGORY_BY_ID, DEFAULT_CATEGORY, categorize, normalize, parseItems, parseLine, offerMatchScore
 } from './categories.js';
 import {
-  firebaseConfig, LIST_ID, USE_ANONYMOUS_AUTH, OFFER_LINKS, FAVORITEN, GREETING_NAME,
+  firebaseConfig, LIST_ID, USE_ANONYMOUS_AUTH, OFFER_LINKS, FAVORITEN, GREETING_NAME, CHAT_URL,
   isFirebaseConfigured
 } from './config.js';
 import { START_WISSEN, WISSEN_VERSION, WOCHENEINKAUF } from './wissen.js';
@@ -486,6 +486,7 @@ const state = {
   offerDraft: {},      // Bearbeitungsstand im Angebots-Dialog
   prospekte: null,     // data/prospekte.json (automatisch abgerufen)
   importRezepte: [],   // data/rezepte-import.json
+  rezepte: null,       // data/rezepte.json (KI-Ideen der Woche)
   openRecipes: new Set(),
   kochbuch: [],
   kochbuchLocal: false,
@@ -766,7 +767,14 @@ const els = {
   rfKategorie: $('#rfKategorie'),
   rfZutaten: $('#rfZutaten'),
   rfSchritte: $('#rfSchritte'),
-  rfCancel: $('#rfCancel')
+  rfCancel: $('#rfCancel'),
+  chatLog: $('#chatLog'),
+  chatIdeas: $('#chatIdeas'),
+  chatSetup: $('#chatSetup'),
+  chatForm: $('#chatForm'),
+  chatInput: $('#chatInput'),
+  chatMic: $('#chatMic'),
+  chatSend: $('#chatSend')
 };
 
 function itemHtml(item) {
@@ -1576,6 +1584,14 @@ function initSpeech() {
       showToast('Passt das so? Dann auf „Auf die Liste“ tippen.');
     }
   });
+  attachSpeech(els.chatMic, els.chatInput, {
+    placeholder: 'Eure Frage …',
+    onDone: () => {
+      const text = els.chatInput.value;
+      els.chatInput.value = '';
+      sendChat(text);
+    }
+  });
 }
 
 /* ---------- Vorschläge beim Tippen ---------- */
@@ -1668,7 +1684,7 @@ function updateGreeting() {
 
 /* ---------- Bereiche & Navigation ---------- */
 
-const VIEW_TITLES = { liste: 'Einkaufsliste', angebote: 'Angebote', kochbuch: 'Kochbuch', vorlieben: 'Vorlieben' };
+const VIEW_TITLES = { liste: 'Einkaufsliste', angebote: 'Angebote', kochbuch: 'Kochbuch', helfer: 'Küchenhelfer', vorlieben: 'Vorlieben' };
 
 function showView(name) {
   if (!document.querySelector(`.view[data-view="${name}"]`)) return;
@@ -1682,6 +1698,7 @@ function showView(name) {
   });
   els.viewTitle.textContent = VIEW_TITLES[name] || '';
   if (name === 'kochbuch') renderRecipes();
+  if (name === 'helfer') renderChat();
   window.scrollTo({ top: 0 });
   vibrate(8);
 }
@@ -1695,6 +1712,18 @@ function updateNavBadges(openCount) {
   const matching = matchingRecipes().length;
   els.navBadgeKochbuch.hidden = !matching;
   els.navBadgeKochbuch.textContent = matching;
+}
+
+/* ---------- Ideen der Woche (data/rezepte.json, KI) ---------- */
+
+async function loadRezepte() {
+  try {
+    const res = await fetch('./data/rezepte.json', { cache: 'no-cache' });
+    state.rezepte = res.ok ? await res.json() : null;
+  } catch {
+    state.rezepte = null;
+  }
+  if (state.view === 'kochbuch') renderRecipes();
 }
 
 /* ---------- Rezept-Import (data/rezepte-import.json) ---------- */
@@ -2014,13 +2043,30 @@ function portionsFor(key, r) {
   return state.portions[key] || Number(r.portionen) || 2;
 }
 
-/** Rezept anhand seines Schlüssels "k-<id>". */
+/** Rezept anhand seines Schlüssels: "k-<id>" (Kochbuch), "w-<i>" (Ideen der Woche), "c-<msg>-<i>" (Chat). */
 function recipeByKey(key) {
-  if (!String(key).startsWith('k-')) return null;
-  return (state.kochbuch || []).find((r) => r.id === key.slice(2)) || null;
+  const [type, a, b] = String(key).split('-');
+  if (type === 'k') return (state.kochbuch || []).find((r) => r.id === key.slice(2)) || null;
+  if (type === 'w') return state.rezepte?.rezepte?.[Number(a)] || null;
+  if (type === 'c') return chat.messages[Number(a)]?.rezepte?.[Number(b)] || null;
+  return null;
 }
 
-/** Rezeptkarte. mode: "kochbuch" | "passt" */
+function addToKochbuch(recipe, herkunft) {
+  if (inKochbuch(recipe.titel)) {
+    showToast(`„${recipe.titel}“ steht schon im Kochbuch`);
+    return false;
+  }
+  backend.setMap('kochbuch', { [makeId()]: kochbuchEntry(recipe, herkunft) });
+  showToast(`„${recipe.titel}“ steht jetzt im Kochbuch`, {
+    label: 'Ansehen',
+    onClick: () => { state.rezepteTab = 'kochbuch'; showView('kochbuch'); }
+  });
+  vibrate(15);
+  return true;
+}
+
+/** Rezeptkarte. mode: "kochbuch" | "passt" | "woche" | "chat" */
 function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
   const open = state.openRecipes.has(key);
   const onList = onListNames();
@@ -2032,7 +2078,9 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
   const persons = portionsFor(key, r);
   const factor = persons / base;
   const k = escapeHtml(key);
-  const id = escapeHtml(r.id);
+  const id = escapeHtml(r.id || '');
+  const inBook = mode === 'kochbuch' || mode === 'passt';
+  const saved = !inBook && inKochbuch(r.titel);
 
   const ingredients = zutaten.map((z, zi) => {
     const already = onList.has(normalize(applyWissen(z.name)));
@@ -2063,21 +2111,28 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
     ? `<p class="recipe__match">${recipeDealsList.length} von ${buyable} Zutaten im Angebot</p>` : '';
 
   return `
-      <article class="recipe${r.favorit ? ' is-fav' : ''}">
+      <article class="recipe${mode === 'chat' ? ' recipe--chat' : ''}${r.favorit ? ' is-fav' : ''}">
         <div class="recipe__top">
           <div class="recipe__head">
             <h3 class="recipe__title">${escapeHtml(r.titel)}</h3>
             <p class="recipe__meta">${escapeHtml(meta)}</p>
           </div>
+          ${inBook ? `
           <button type="button" class="recipe__fav" data-kb-fav="${id}" aria-pressed="${Boolean(r.favorit)}"
                   aria-label="${r.favorit ? 'Nicht mehr Lieblingsrezept' : 'Als Lieblingsrezept markieren'}">
             <svg width="22" height="22" aria-hidden="true"><use href="#i-heart"/></svg>
-          </button>
+          </button>` : ''}
         </div>
         ${r.beschreibung ? `<p class="recipe__desc">${escapeHtml(r.beschreibung)}</p>` : ''}
-        ${r.notiz ? `<p class="recipe__note">${escapeHtml(r.notiz)}</p>` : ''}
+        ${inBook && r.notiz ? `<p class="recipe__note">${escapeHtml(r.notiz)}</p>` : ''}
         ${dealSummary}
         ${recipeDealsList.length ? `<div class="recipe__deals">${recipeDealsList.slice(0, 5).map(({ z, offer }) => `<span class="recipe__deal">${escapeHtml(z.name)} · ${escapeHtml(offerLabel(offer))}</span>`).join('')}</div>` : ''}
+        ${!inBook ? `
+        <div class="recipe__save">
+          ${saved
+            ? '<span class="recipe__saved">Steht im Kochbuch</span>'
+            : `<button type="button" class="btn btn--tinted btn--block" data-recipe-save="${k}">Ins Kochbuch</button>`}
+        </div>` : ''}
         <button type="button" class="recipe__toggle" data-recipe-toggle="${k}" aria-expanded="${open}">
           ${open ? 'Zuklappen' : 'Zutaten & Zubereitung'}
           <svg width="16" height="16" aria-hidden="true" class="${open ? 'is-up' : ''}"><use href="#i-chev"/></svg>
@@ -2096,13 +2151,14 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
           <button type="button" class="btn btn--primary btn--block recipe__add" data-recipe-add="${k}">Ausgewählte auf die Liste</button>
           ${(r.schritte || []).length ? `<h4>Zubereitung</h4>
           <ol class="steps">${(r.schritte || []).map((st) => `<li>${escapeHtml(st)}</li>`).join('')}</ol>` : ''}
+          ${inBook ? `
           <h4>Notiz</h4>
           <textarea class="recipe__notefield" data-kb-note="${id}" rows="2" maxlength="500"
                     placeholder="z. B. mit extra Chili, doppelte Menge Hähnchen">${escapeHtml(r.notiz || '')}</textarea>
           <div class="recipe__actions">
             <button type="button" class="btn btn--tinted" data-kb-edit="${id}">Bearbeiten</button>
             <button type="button" class="btn btn--destructive-plain" data-kb-delete="${id}">Entfernen</button>
-          </div>
+          </div>` : ''}
         </div>` : ''}
       </article>`;
 }
@@ -2113,11 +2169,13 @@ function renderRecipes() {
   if (!state.rezepteTab) state.rezepteTab = 'kochbuch';
   const tab = state.rezepteTab;
   const pending = pendingImports();
+  const week = state.rezepte?.rezepte || [];
 
   const head = `
     <div class="seg seg--recipes" role="tablist" aria-label="Kochbuch">
-      <button type="button" role="tab" data-rtab="kochbuch" class="${tab === 'kochbuch' ? 'is-active' : ''}" aria-selected="${tab === 'kochbuch'}">Alle Rezepte <small>${book.length}</small></button>
+      <button type="button" role="tab" data-rtab="kochbuch" class="${tab === 'kochbuch' ? 'is-active' : ''}" aria-selected="${tab === 'kochbuch'}">Kochbuch <small>${book.length}</small></button>
       <button type="button" role="tab" data-rtab="passt" class="${tab === 'passt' ? 'is-active' : ''}" aria-selected="${tab === 'passt'}">Passt zu den Angeboten <small>${matches.length}</small></button>
+      <button type="button" role="tab" data-rtab="woche" class="${tab === 'woche' ? 'is-active' : ''}" aria-selected="${tab === 'woche'}">Ideen der Woche <small>${week.length}</small></button>
     </div>
     <div class="kb__actions">
       <button type="button" class="btn btn--primary" data-rf-new>
@@ -2134,6 +2192,20 @@ function renderRecipes() {
       <button type="button" class="btn btn--primary" data-import-file>Ins Kochbuch übernehmen</button>
     </div>` : ''}
     ${state.kochbuchLocal ? '<p class="memory__note">Gerade nur auf diesem Handy gespeichert – die Firestore-Regel für „kochbuch" fehlt noch (siehe README).</p>' : ''}`;
+
+  if (tab === 'woche') {
+    const until = state.rezepte?.gueltigBis;
+    const untilText = until && until >= todayIso()
+      ? ` bis ${parseIso(until).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}` : '';
+    els.recipes.innerHTML = head + (week.length
+      ? `<p class="view__note">Vom Küchenhelfer aus den Angeboten${untilText} vorgeschlagen – ohne Zwiebeln, mit viel Eiweiß. Gefällt euch eins? „Ins Kochbuch“.</p>
+         ${week.map((r, ri) => recipeCardHtml(r, `w-${ri}`, { mode: 'woche' })).join('')}`
+      : `<div class="empty-card">
+          <p><strong>Die Ideen der Woche kommen bald</strong></p>
+          <p>Sie werden automatisch aus den aktuellen Angeboten erstellt, sobald der Gemini-Schlüssel eingerichtet ist.</p>
+        </div>`);
+    return;
+  }
 
   if (tab === 'passt') {
     const offerCount = STORES.reduce((n, s) => n + storeOffers(s).length, 0) + Object.keys(state.offers || {}).length;
@@ -2207,16 +2279,23 @@ function renderKochbuchList() {
     ${items.map((r) => recipeCardHtml(r, `k-${r.id}`)).join('')}`).join('');
 }
 
-/** Fügt Zutaten [{ name, menge }] hinzu. */
+/** Fügt Artikel [{ name, menge, laden }] hinzu – gruppiert nach Laden. */
 function addSuggested(items) {
-  return addParsed(items.map((it) => ({
-    name: it.name.charAt(0).toUpperCase() + it.name.slice(1),
-    qty: it.menge || ''
-  })), 'both');
+  const byStore = { both: [], aldi: [], marktkauf: [], rewe: [] };
+  items.forEach((it) => {
+    const store = STORES.includes(it.laden) ? it.laden : 'both';
+    byStore[store].push({ name: it.name.charAt(0).toUpperCase() + it.name.slice(1), qty: it.menge || '' });
+  });
+  let added = false;
+  for (const [store, list] of Object.entries(byStore)) {
+    if (list.length) added = addParsed(list, store) || added;
+  }
+  return added;
 }
 
-function rerenderRecipes() {
-  if ($('#kbList', els.recipes) && state.rezepteTab === 'kochbuch') renderKochbuchList();
+function rerenderRecipes(container = els.recipes) {
+  if (container === els.chatLog) renderChat();
+  else if ($('#kbList', els.recipes) && state.rezepteTab === 'kochbuch') renderKochbuchList();
   else renderRecipes();
 }
 
@@ -2228,42 +2307,43 @@ function addRecipeIngredients(key, container) {
     .filter((cb) => cb.dataset.recipe === key && cb.checked)
     .map((cb) => {
       const z = recipe.zutaten[Number(cb.dataset.ingr)];
-      return { ...z, menge: scaleMenge(z.menge, factor) };
+      const laden = STORES.includes(z.laden) ? z.laden : ingredientOffer(z)?.store;
+      return { ...z, laden, menge: scaleMenge(z.menge, factor) };
     });
   if (!chosen.length) {
     showToast('Bitte mindestens eine Zutat anhaken.');
     return;
   }
   addSuggested(chosen);
-  setTimeout(rerenderRecipes, 100);
+  setTimeout(() => rerenderRecipes(container), 100);
 }
 
-/** Klicks im Kochbuch. */
+/** Klicks auf Rezeptkarten (Kochbuch und Chat). Gibt true zurück, wenn behandelt. */
 function handleRecipeClick(e, container) {
   const t = e.target;
   const tab = t.closest('[data-rtab]');
   if (tab) {
     state.rezepteTab = tab.dataset.rtab;
     renderRecipes();
-    return;
+    return true;
   }
-  if (t.closest('[data-rf-new]')) { openRecipeForm(); return; }
-  if (t.closest('[data-import-file]')) { importRecipes(pendingImports(), 'import'); return; }
+  if (t.closest('[data-rf-new]')) { openRecipeForm(); return true; }
+  if (t.closest('[data-import-file]')) { importRecipes(pendingImports(), 'import'); return true; }
   const edit = t.closest('[data-kb-edit]');
-  if (edit) { openRecipeForm(edit.dataset.kbEdit); return; }
+  if (edit) { openRecipeForm(edit.dataset.kbEdit); return true; }
   const filter = t.closest('[data-kb-filter]');
   if (filter) {
     state.kbFilter = filter.dataset.kbFilter;
     renderRecipes();
-    return;
+    return true;
   }
   const toggle = t.closest('[data-recipe-toggle]');
   if (toggle) {
     const key = toggle.dataset.recipeToggle;
     if (state.openRecipes.has(key)) state.openRecipes.delete(key);
     else state.openRecipes.add(key);
-    rerenderRecipes();
-    return;
+    rerenderRecipes(container);
+    return true;
   }
   const portion = t.closest('[data-portion]');
   if (portion) {
@@ -2271,12 +2351,21 @@ function handleRecipeClick(e, container) {
     const recipe = recipeByKey(key);
     if (recipe) {
       state.portions[key] = Math.max(1, Math.min(20, portionsFor(key, recipe) + Number(portion.dataset.step)));
-      rerenderRecipes();
+      rerenderRecipes(container);
     }
-    return;
+    return true;
   }
   const add = t.closest('[data-recipe-add]');
-  if (add) { addRecipeIngredients(add.dataset.recipeAdd, container); return; }
+  if (add) { addRecipeIngredients(add.dataset.recipeAdd, container); return true; }
+  const save = t.closest('[data-recipe-save]');
+  if (save) {
+    const key = save.dataset.recipeSave;
+    const recipe = recipeByKey(key);
+    if (recipe && addToKochbuch(recipe, key.startsWith('w-') ? 'woche' : 'helfer')) {
+      setTimeout(() => rerenderRecipes(container), 50);
+    }
+    return true;
+  }
   const fav = t.closest('[data-kb-fav]');
   if (fav) {
     const entry = (state.kochbuch || []).find((r) => r.id === fav.dataset.kbFav);
@@ -2284,10 +2373,11 @@ function handleRecipeClick(e, container) {
       updateKochbuch(entry.id, { favorit: !entry.favorit });
       vibrate(10);
     }
-    return;
+    return true;
   }
   const del = t.closest('[data-kb-delete]');
-  if (del) removeFromKochbuch(del.dataset.kbDelete);
+  if (del) { removeFromKochbuch(del.dataset.kbDelete); return true; }
+  return false;
 }
 
 /* ---------- Familien-Gedächtnis ---------- */
@@ -2350,6 +2440,7 @@ function handleWissen(map, meta = {}) {
   renderWissen();
   if (state.view === 'liste') renderFavorites();
   if (state.view === 'kochbuch') renderRecipes();
+  if (state.view === 'helfer') renderChat();
 }
 
 /** "Milch" → "Milch 1,5 %" usw. (nur bei genau passendem Namen) */
@@ -2392,6 +2483,169 @@ function renderWissen() {
       <button type="button" class="memory__del" data-wissen-del="${escapeHtml(w.id)}" aria-label="Vergessen: ${escapeHtml(w.text)}"><svg width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
     </li>`).join('') || '<li class="memory__empty">Noch nichts gemerkt.</li>';
   $('#memoryNote').hidden = !state.wissenLocal;
+}
+
+/* ---------- Küchenhelfer (Chat) ---------- */
+
+const CHAT_LS = 'kueche:chat';
+const CODE_LS = 'kueche:zugangscode';
+const chat = { messages: readJSON(CHAT_LS, []), busy: false, needsCode: false };
+
+function saveChat() {
+  chat.messages = chat.messages.slice(-30);
+  writeJSON(CHAT_LS, chat.messages.filter((m) => !m.error));
+}
+
+/** Sehr einfache, sichere Formatierung: **fett** und Zeilenumbrüche. */
+function formatBotText(text) {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function renderChat() {
+  if (!CHAT_URL) {
+    els.chatSetup.hidden = false;
+    els.chatSetup.innerHTML = `
+      <div class="empty-card">
+        <p><strong>Der Küchenhelfer ist noch nicht eingerichtet</strong></p>
+        <p>Anleitung in der README, Abschnitt „Küchenhelfer“.</p>
+      </div>`;
+    els.chatForm.hidden = true;
+    els.chatIdeas.hidden = true;
+    els.chatLog.innerHTML = '';
+    return;
+  }
+  if (chat.needsCode || !readJSON(CODE_LS, '')) {
+    els.chatSetup.hidden = false;
+    els.chatSetup.innerHTML = `
+      <div class="empty-card">
+        <p><strong>Einmal den Zugangscode eingeben</strong></p>
+        <p>Danach merkt sich das Handy ihn.</p>
+        <input type="text" id="familyCode" autocomplete="off" placeholder="Zugangscode" aria-label="Zugangscode">
+        <button type="button" class="btn btn--primary btn--block" id="familyCodeSave">Speichern</button>
+      </div>`;
+    els.chatForm.hidden = true;
+    els.chatIdeas.hidden = true;
+    els.chatLog.innerHTML = '';
+    return;
+  }
+  els.chatSetup.hidden = true;
+  els.chatForm.hidden = false;
+  els.chatIdeas.hidden = chat.messages.length > 0;
+
+  const onList = onListNames();
+  const stems = avoidStems();
+  const parts = chat.messages.map((m, mi) => {
+    if (m.role === 'user') return `<div class="bubble bubble--me">${escapeHtml(m.content)}</div>`;
+    let html = `<div class="bubble bubble--bot${m.error ? ' bubble--error' : ''}">${formatBotText(m.content)}</div>`;
+    (m.rezepte || []).forEach((r, ri) => { html += recipeCardHtml(r, `c-${mi}-${ri}`, { mode: 'chat' }); });
+    if (m.merken?.length) {
+      const known = new Set((state.wissen || []).map((w) => normalize(w.text)));
+      html += `
+        <div class="chat-card">
+          <h4>Soll ich mir das merken?</h4>
+          ${m.merken.map((x, xi) => {
+            const done = (m.gemerkt || []).includes(xi) || known.has(normalize(x.text));
+            return `
+            <div class="chat-card__row">
+              <span>${escapeHtml(x.text)}</span>
+              ${done
+                ? '<span class="chat-card__done">gemerkt</span>'
+                : `<button type="button" class="btn btn--tinted" data-merken="${mi}-${xi}">Merken</button>`}
+            </div>`;
+          }).join('')}
+        </div>`;
+    }
+    if (m.artikel?.length) {
+      html += `
+        <div class="chat-card">
+          <h4>Vorschlag für eure Liste</h4>
+          <div class="ingr-list">
+          ${m.artikel.map((a, ai) => {
+            const already = onList.has(normalize(a.name));
+            const avoided = isAvoided(a.name, stems);
+            const notes = [];
+            if (STORES.includes(a.laden)) notes.push(`<span class="ingr__deal">${escapeHtml(STORE_LABELS[a.laden])}</span>`);
+            if (already) notes.push('<span class="ingr__ok">steht schon drauf</span>');
+            if (avoided) notes.push('<span class="ingr__avoid">mögt ihr nicht</span>');
+            return `
+              <label class="ingr${avoided ? ' is-avoided' : ''}">
+                <input type="checkbox" data-chat-msg="${mi}" data-chat-item="${ai}" ${already || avoided || m.added ? '' : 'checked'} ${m.added ? 'disabled' : ''}>
+                <span class="ingr__name">${escapeHtml(a.name)}${notes.length ? `<span class="ingr__notes">${notes.join('')}</span>` : ''}</span>
+                <span class="ingr__menge">${escapeHtml(a.menge)}</span>
+              </label>`;
+          }).join('')}
+          </div>
+          ${m.added
+            ? '<p class="chat-card__done" style="margin:12px 0 0">Ist auf der Liste</p>'
+            : `<button type="button" class="btn btn--primary btn--block recipe__add" data-chat-add="${mi}">Ausgewählte auf die Liste</button>`}
+        </div>`;
+    }
+    return html;
+  });
+  if (chat.busy) parts.push('<div class="bubble bubble--bot bubble--typing"><span></span><span></span><span></span></div>');
+  if (chat.messages.length && !chat.busy) {
+    parts.push('<button type="button" class="btn btn--plain chat__reset" id="chatReset">Neues Gespräch</button>');
+  }
+  els.chatLog.innerHTML = parts.join('');
+  els.chatSend.disabled = chat.busy;
+}
+
+async function sendChat(text) {
+  const question = String(text || '').trim();
+  if (!question || chat.busy || !CHAT_URL) return;
+  chat.messages.push({ role: 'user', content: question });
+  chat.busy = true;
+  saveChat();
+  renderChat();
+  els.chatLog.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  const history = chat.messages.filter((m) => !m.error).slice(-16).map((m) => ({ role: m.role, content: m.content }));
+  const liste = state.items.filter((i) => !i.done).map((i) => `${i.qty ? `${i.qty} ` : ''}${i.name}`);
+  try {
+    const res = await fetch(`${CHAT_URL.replace(/\/$/, '')}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Zugangscode': readJSON(CODE_LS, '') },
+      body: JSON.stringify({ messages: history, liste, wissen: (state.wissen || []).map((w) => w.text) })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      chat.needsCode = true;
+      chat.messages.pop();
+      showToast('Der Zugangscode stimmt nicht – bitte nochmal eingeben.');
+    } else if (!res.ok) {
+      chat.messages.push({ role: 'assistant', content: data.fehler || 'Der Helfer ist gerade nicht erreichbar.', error: true });
+    } else {
+      chat.messages.push({
+        role: 'assistant',
+        content: data.antwort || '',
+        artikel: Array.isArray(data.artikel) ? data.artikel : [],
+        rezepte: Array.isArray(data.rezepte) ? data.rezepte.filter((r) => r && r.titel && Array.isArray(r.zutaten)) : [],
+        merken: Array.isArray(data.merken) ? data.merken.filter((x) => x && x.text) : []
+      });
+    }
+  } catch {
+    chat.messages.push({ role: 'assistant', content: 'Keine Verbindung – seid ihr online? Gleich nochmal versuchen.', error: true });
+  }
+  chat.busy = false;
+  saveChat();
+  renderChat();
+  els.chatLog.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function addChatSuggestion(mi) {
+  const msg = chat.messages[mi];
+  if (!msg?.artikel) return;
+  const chosen = $$(`input[data-chat-msg="${mi}"]`, els.chatLog)
+    .filter((cb) => cb.checked)
+    .map((cb) => msg.artikel[Number(cb.dataset.chatItem)]);
+  if (!chosen.length) {
+    showToast('Bitte mindestens eine Sache anhaken.');
+    return;
+  }
+  addSuggested(chosen);
+  msg.added = true;
+  saveChat();
+  renderChat();
 }
 
 /* ---------- WhatsApp teilen ---------- */
@@ -2619,6 +2873,67 @@ function bindEvents() {
     }
   });
 
+  // Küchenhelfer
+  els.chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = els.chatInput.value;
+    els.chatInput.value = '';
+    els.chatInput.style.height = '';
+    sendChat(text);
+  });
+  els.chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      els.chatForm.requestSubmit();
+    }
+  });
+  els.chatInput.addEventListener('input', () => {
+    els.chatInput.style.height = 'auto';
+    els.chatInput.style.height = `${Math.min(els.chatInput.scrollHeight, 140)}px`;
+  });
+  els.chatIdeas.addEventListener('click', (e) => {
+    const fill = e.target.closest('[data-idea-fill]');
+    if (fill) {
+      els.chatInput.value = fill.dataset.ideaFill;
+      els.chatInput.focus();
+      return;
+    }
+    const idea = e.target.closest('[data-idea]');
+    if (idea) sendChat(idea.dataset.idea);
+  });
+  els.chatLog.addEventListener('click', (e) => {
+    if (handleRecipeClick(e, els.chatLog)) return;
+    const merk = e.target.closest('[data-merken]');
+    if (merk) {
+      const [mi, xi] = merk.dataset.merken.split('-').map(Number);
+      const msg = chat.messages[mi];
+      const item = msg?.merken?.[xi];
+      if (item) {
+        addWissen(item);
+        msg.gemerkt = [...(msg.gemerkt || []), xi];
+        saveChat();
+        renderChat();
+      }
+      return;
+    }
+    const add = e.target.closest('[data-chat-add]');
+    if (add) addChatSuggestion(Number(add.dataset.chatAdd));
+    if (e.target.closest('#chatReset')) {
+      chat.messages = [];
+      saveChat();
+      renderChat();
+    }
+  });
+  els.chatSetup.addEventListener('click', (e) => {
+    if (!e.target.closest('#familyCodeSave')) return;
+    const code = $('#familyCode', els.chatSetup)?.value.trim();
+    if (!code) return;
+    writeJSON(CODE_LS, code);
+    chat.needsCode = false;
+    renderChat();
+    showToast('Gespeichert – jetzt könnt ihr loslegen.');
+  });
+
   // Rezept-Formular
   els.recipeForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2769,6 +3084,7 @@ function init() {
   // Prospekt-Links
   loadProspekte();
   loadImportRezepte();
+  loadRezepte();
   updateGreeting();
 
   buildCategoryGrid();

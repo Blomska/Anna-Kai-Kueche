@@ -1,0 +1,388 @@
+#!/usr/bin/env node
+/**
+ * scripts/ki-auswertung.mjs
+ * ------------------------------------------------------------------
+ * Läuft im GitHub-Workflow NACH update-prospekte.mjs und nutzt Google Gemini für:
+ *
+ *  1. Marktkauf-Prospekt lesen: Alle Produkte mit Preis werden aus den
+ *     Seitenbildern (data/mk-seiten/) herausgeschrieben – inkl. Seitenzahl.
+ *     → In der App kann man jedes Produkt antippen und auf die Liste setzen.
+ *  2. Rezepte der Woche: 5 Rezepte für Anna & Kai aus den aktuellen Angeboten
+ *     (Aldi, Marktkauf, REWE falls verfügbar) → data/rezepte.json
+ *
+ * Benötigt den Gemini-Schlüssel als GEMINI_API_KEY – im Workflow kommt er aus
+ * dem GitHub-Secret GEMINIAPIKEYANNA (eigenes Kontingent). Ohne Schlüssel
+ * beendet sich das Skript ohne Fehler (die App funktioniert dann wie bisher).
+ * Optional: GEMINI_MODEL legt ein bestimmtes Modell fest.
+ *
+ * Kosten sparen: Ergebnisse werden in .ki-cache/ zwischengespeichert
+ * (per actions/cache) – Gemini wird nur gefragt, wenn sich Prospekt oder
+ * Angebote wirklich geändert haben (also etwa 1–2× pro Woche).
+ * ------------------------------------------------------------------
+ */
+
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as z from 'zod';
+import { createClient, generateJson, isQuota } from '../lib/gemini.mjs';
+import { firebaseConfig, LIST_ID, FAVORITEN } from '../config.js';
+import { START_WISSEN } from '../wissen.js';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const DATA_FILE = resolve(ROOT, 'data/prospekte.json');
+const REZEPTE_FILE = resolve(ROOT, 'data/rezepte.json');
+const PAGES_DIR = resolve(ROOT, 'data/mk-seiten');
+const CACHE_DIR = resolve(ROOT, '.ki-cache');
+
+const MODEL = process.env.GEMINI_MODEL || undefined; // leer = automatisch
+const PAGES_PER_REQUEST = 6;
+const PAUSE_MS = 8000; // Pause zwischen Anfragen – schont das kostenlose Kontingent
+const EXTRACT_BUDGET_MS = 6 * 60 * 1000; // höchstens 6 Minuten für die Prospekt-Auswertung
+
+
+const KB_KATEGORIEN = ['Hauptgerichte', 'Schnelle Gerichte', 'Frühstück', 'Suppen & Eintöpfe', 'Salate & Bowls', 'Snacks & Süßes', 'Backen'];
+
+const CATEGORY_NAMES = [
+  'Obst & Gemüse', 'Backwaren', 'Fleisch & Wurst', 'Kühlregal & Molkerei', 'Trockensortiment & Vorräte',
+  'Süßes & Snacks', 'Getränke', 'Tiefkühl', 'Drogerie & Haushalt', 'Sonstiges'
+];
+
+/* ---------------- Hilfsfunktionen ---------------- */
+
+const sha = (data) => createHash('sha256').update(data).digest('hex').slice(0, 16);
+
+async function readJson(file, fallback = null) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+// Ohne Anfragen an Gemini arbeiten (z. B. bei Veröffentlichung nach Code-Upload):
+// es werden nur zwischengespeicherte Ergebnisse verwendet.
+const OFFLINE = Boolean(process.env.KI_OFFLINE);
+// Manueller Lauf "nur Rezepte": Prospektseiten nur aus dem Zwischenspeicher
+const NUR_REZEPTE = Boolean(process.env.KI_NUR_REZEPTE);
+
+/**
+ * Zwischenspeicher: Ergebnis zu `hash` laden oder neu berechnen.
+ * Zusätzlich wird immer das letzte Ergebnis als "<name>-latest" gemerkt –
+ * im OFFLINE-Modus wird dieses verwendet, wenn es zum Hash nichts gibt.
+ */
+async function cached(name, hash, compute) {
+  const file = resolve(CACHE_DIR, `${name}-v3-${hash}.json`);
+  const latest = resolve(CACHE_DIR, `${name}-v3-latest.json`);
+  const hit = await readJson(file);
+  if (hit) {
+    console.log(`  ↺ ${name}: aus dem Zwischenspeicher (keine neuen Anfragen)`);
+    return hit;
+  }
+  if (OFFLINE) {
+    const last = await readJson(latest);
+    if (last) console.log(`  ↺ ${name}: letztes Ergebnis übernommen (ohne Anfragen)`);
+    return last;
+  }
+  const value = await compute();
+  if (value == null) return null;
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(latest, JSON.stringify(value));
+  if (!value.unvollstaendig) await writeFile(file, JSON.stringify(value));
+  return value;
+}
+
+/** Ein Gemini-Aufruf mit strukturierter Ausgabe (Zod-Schema). */
+async function ask(ai, { system, parts, schema, maxTokens = 32768 }) {
+  return generateJson(ai, {
+    system,
+    contents: [{ role: 'user', parts }],
+    schema,
+    maxTokens,
+    model: MODEL,
+    maxModels: 7 // kostenloses Kontingent gilt je Modell – mehrere durchprobieren
+  });
+}
+
+/* ---------------- Gedächtnis (Vorlieben) lesen ---------------- */
+
+/**
+ * Liest das gemeinsame Gedächtnis aus Firebase (lists/{LIST_ID}/wissen) –
+ * mit einer anonymen Anmeldung, genau wie die App. Klappt das nicht,
+ * wird das Startwissen aus wissen.js verwendet.
+ */
+async function loadWissen() {
+  const fallback = START_WISSEN.map((w) => w.text);
+  try {
+    const signUp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnSecureToken: true })
+    });
+    if (!signUp.ok) throw new Error(`Anmeldung HTTP ${signUp.status}`);
+    const { idToken } = await signUp.json();
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/lists/${encodeURIComponent(LIST_ID)}/wissen?pageSize=200`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
+    if (!res.ok) throw new Error(`Lesen HTTP ${res.status}`);
+    const json = await res.json();
+    const texts = (json.documents || [])
+      .filter((d) => !d.name.endsWith('/_start'))
+      .map((d) => d.fields?.text?.stringValue)
+      .filter(Boolean);
+    if (!texts.length) return fallback;
+    console.log(`  Vorlieben: ${texts.length} Einträge aus Firebase`);
+    return texts;
+  } catch (err) {
+    console.log(`  Vorlieben aus Firebase nicht lesbar (${err.message}) – nutze Startwissen`);
+    return fallback;
+  }
+}
+
+/* ---------------- 1. Marktkauf-Prospekt lesen ---------------- */
+
+const ProductSchema = z.object({
+  produkte: z.array(z.object({
+    seite: z.number().int(),
+    listenname: z.string(),
+    produkt: z.string(),
+    marke: z.string(),
+    preis: z.string(),
+    einheit: z.string(),
+    grundpreis: z.string(),
+    kategorie: z.enum(CATEGORY_NAMES)
+  }))
+});
+
+const EXTRACT_SYSTEM = `Du liest Seiten eines Supermarkt-Prospekts (Marktkauf, Deutschland) und schreibst jedes Angebot mit Preis heraus.
+
+Regeln:
+- Nur Produkte mit sichtbarem Angebotspreis. Keine Werbetexte, Gutscheine oder Dienstleistungen.
+- "seite": die Seitenzahl, die im Text vor dem jeweiligen Bild steht.
+- "listenname": so, wie man es auf einen Einkaufszettel schreibt – kurz (1–3 Wörter), mit Marke nur wenn sie wichtig ist, z. B. "Landliebe Butter", "Bockwurst", "Philadelphia".
+- "produkt": Produktbezeichnung wie im Prospekt (ohne Marke), kurz gefasst.
+- "marke": Marke oder leerer Text.
+- "preis": Angebotspreis im Format "1,29 €". Bei App-/Karten-Preisen den normal gültigen Angebotspreis nehmen und "(App)" anhängen, wenn es nur mit App gilt.
+- "einheit": Packungsgröße/Sorten kurz, z. B. "250-g-Packung, versch. Sorten". Sonst leer.
+- "grundpreis": z. B. "1 kg = 5,16 €", sonst leer.
+- "kategorie": passende Supermarkt-Abteilung.
+- Lies Preise sehr sorgfältig. Wenn ein Preis unleserlich ist, lass das Produkt weg.`;
+
+async function extractMarktkauf(ai) {
+  let files = [];
+  try {
+    files = (await readdir(PAGES_DIR))
+      .map((f) => ({ f, n: Number(f.match(/seite-(\d+)\.jpg$/)?.[1]) }))
+      .filter((x) => x.n)
+      .sort((a, b) => a.n - b.n);
+  } catch {
+    console.log('  Keine Marktkauf-Seiten vorhanden – übersprungen');
+    return null;
+  }
+  if (!files.length) return null;
+
+  const images = await Promise.all(files.map(async ({ f, n }) => ({ n, data: await readFile(resolve(PAGES_DIR, f)) })));
+  const batches = [];
+  for (let i = 0; i < images.length; i += PAGES_PER_REQUEST) batches.push(images.slice(i, i + PAGES_PER_REQUEST));
+
+  // Jedes Seitenpaket wird einzeln zwischengespeichert – so geht Fortschritt
+  // nie verloren und spätere Läufe machen nur die noch fehlenden Seiten.
+  let quotaHit = false;
+  let requests = 0;
+  const started = Date.now();
+  const results = [];
+  for (const batch of batches) {
+    const file = resolve(CACHE_DIR, `mk-seiten-v3-${sha(Buffer.concat(batch.map((b) => b.data)))}.json`);
+    const hit = await readJson(file);
+    if (hit) {
+      results.push(hit);
+      continue;
+    }
+    if (OFFLINE || NUR_REZEPTE || quotaHit || Date.now() - started > EXTRACT_BUDGET_MS) {
+      results.push(null);
+      continue;
+    }
+    if (requests > 0) await new Promise((r) => setTimeout(r, PAUSE_MS));
+    requests += 1;
+    const parts = [];
+    for (const img of batch) {
+      parts.push({ text: `Seite ${img.n}:` });
+      parts.push({ inlineData: { mimeType: 'image/jpeg', data: img.data.toString('base64') } });
+    }
+    parts.push({ text: 'Schreibe alle Angebote dieser Seiten heraus.' });
+    try {
+      const out = await ask(ai, { system: EXTRACT_SYSTEM, parts, schema: ProductSchema });
+      await mkdir(CACHE_DIR, { recursive: true });
+      await writeFile(file, JSON.stringify(out.produkte));
+      results.push(out.produkte);
+    } catch (err) {
+      console.warn(`    Seiten ${batch[0].n}–${batch.at(-1).n}: ${err.message.slice(0, 200)}`);
+      if (isQuota(err)) {
+        quotaHit = true;
+        console.warn('  Kontingent erschöpft – restliche Seiten beim nächsten Lauf');
+      }
+      results.push(null);
+    }
+  }
+
+  const done = results.filter(Boolean).length;
+  console.log(`  Marktkauf-Prospekt: ${done} von ${batches.length} Seitenpaketen ausgewertet${requests ? ` (${requests} neue Anfragen)` : ''}`);
+  return done ? results.filter(Boolean).flat() : null;
+}
+
+/* ---------------- 2. Rezepte der Woche ---------------- */
+
+const RecipeSchema = z.object({
+  rezepte: z.array(z.object({
+    titel: z.string(),
+    emoji: z.string(),
+    beschreibung: z.string(),
+    portionen: z.number().int(),
+    dauer_minuten: z.number().int(),
+    schwierigkeit: z.enum(['einfach', 'mittel']),
+    kategorie: z.enum(KB_KATEGORIEN),
+    zutaten: z.array(z.object({
+      name: z.string(),
+      menge: z.string(),
+      laden: z.enum(['aldi', 'marktkauf', 'rewe', 'egal']),
+      im_angebot: z.boolean(),
+      preis: z.string(),
+      vorrat: z.boolean()
+    })),
+    schritte: z.array(z.string())
+  }))
+});
+
+const RECIPE_SYSTEM = `Du bist eine erfahrene Köchin und schlägst Anna und Kai (ein Paar in Lüdinghausen, kaufen bei Aldi Nord, Marktkauf Nientied und REWE ein) Rezepte für die Woche vor.
+
+Feste Regeln – immer einhalten:
+- KEINE Zwiebeln: keine Zwiebeln, Schalotten, Frühlings- oder Lauchzwiebeln, auch nicht als Zwiebelpulver. Für Würze stattdessen z. B. Knoblauch, Lauch, Sellerie, Paprika, Kräuter oder Gewürze nehmen.
+- Eiweißreich: jedes Rezept mit einer guten Eiweißquelle (z. B. Hähnchen, Pute, mageres Rind, Fisch, Eier, Skyr, Quark, Hüttenkäse, Linsen, Kichererbsen, Bohnen, Tofu). Gib in "beschreibung" grob das Eiweiß pro Portion an, z. B. "ca. 40 g Eiweiß pro Portion".
+- Alles, was im Abschnitt "Das wissen wir über Anna und Kai" steht, hat Vorrang.
+
+Ziele:
+- 5 abwechslungsreiche, alltagstaugliche Rezepte (z. B. 3 Hauptgerichte, 1 schnelles Gericht, 1 Frühstück oder Snack), passend zur Jahreszeit.
+- Nutze möglichst viele Zutaten, die diese Woche im Angebot sind – das ist der Sinn der Sache.
+- Moderne, unkomplizierte Küche, keine schwer erhältlichen Zutaten.
+
+Zutaten:
+- "name" so, wie man es auf den Einkaufszettel schreibt (z. B. "Hähnchenbrust", "Paprika", "Skyr").
+- "laden": "aldi", "marktkauf" oder "rewe", wenn die Zutat dort im Angebot ist, sonst "egal".
+- "im_angebot" und "preis" nur für echte Angebote aus der Liste (Preis wie angegeben), sonst false und "".
+- "vorrat": true für Dinge, die man meist zu Hause hat (Salz, Pfeffer, Öl, Mehl, Zucker, Gewürze, Brühe).
+- "portionen": 2, außer die Vorlieben sagen etwas anderes.
+
+"kategorie": Hauptgerichte, Schnelle Gerichte (bis ca. 25 Min), Frühstück, Suppen & Eintöpfe, Salate & Bowls, Snacks & Süßes oder Backen.
+
+Schritte: kurz, klar, 4–8 Schritte. "emoji": ein passendes Essens-Emoji.`;
+
+/** Sicherheitsnetz: Zwiebeln trotzdem aus den Zutaten entfernen. */
+const AVOID = /zwiebel|schalotte/i;
+function removeAvoided(rezepte) {
+  let removed = 0;
+  rezepte.forEach((r) => {
+    const before = r.zutaten.length;
+    r.zutaten = r.zutaten.filter((z) => !AVOID.test(z.name));
+    removed += before - r.zutaten.length;
+  });
+  if (removed) console.log(`  ${removed} Zwiebel-Zutat(en) entfernt`);
+  return rezepte;
+}
+
+const NON_FOOD = /mode|deko|schlafzimmer|pflanzen|kosmetik|haushalt|drogerie|garten|technik|elektro|spielzeug|tier/i;
+
+async function createRecipes(ai, data, wissen = []) {
+  const lines = [];
+  const add = (store, o) => {
+    if (NON_FOOD.test(o.group || '') || NON_FOOD.test(o.kategorie || '')) return;
+    lines.push(`${store} | ${[o.brand, o.name].filter(Boolean).join(' ')} | ${o.price}${o.unit ? ` | ${o.unit}` : ''}`);
+  };
+  (data?.aldi?.offers?.offers || []).forEach((o) => add('Aldi', o));
+  (data?.marktkauf?.offers?.offers || []).forEach((o) => add('Marktkauf', o));
+  (data?.rewe?.offers?.offers || []).forEach((o) => add('REWE', o));
+  if (lines.length < 10) {
+    console.log('  Zu wenige Angebote für Rezepte – übersprungen');
+    return null;
+  }
+  lines.sort();
+  const hash = sha(`${lines.join('\n')}\n${wissen.join('\n')}`);
+
+  return cached('rezepte', hash, async () => {
+    console.log(`  Gemini erstellt Rezepte aus ${lines.length} Angeboten …`);
+    const month = new Date().toLocaleDateString('de-DE', { month: 'long' });
+    const out = await ask(ai, {
+      system: RECIPE_SYSTEM,
+      parts: [{ text: `Monat: ${month}\n${FAVORITEN.length ? `Lieblingszutaten: ${FAVORITEN.join(', ')}\n` : ''}\nDas wissen wir über Anna und Kai – bitte unbedingt berücksichtigen:\n${wissen.map((w) => `- ${w}`).join('\n')}\n\nAngebote dieser Woche (Laden | Produkt | Preis | Einheit):\n${lines.join('\n')}` }],
+      schema: RecipeSchema
+    });
+    return { erstellt: new Date().toISOString(), rezepte: removeAvoided(out.rezepte) };
+  });
+}
+
+/* ---------------- Hauptprogramm ---------------- */
+
+async function main() {
+  if (!process.env.GEMINI_API_KEY && !OFFLINE) {
+    console.log('Kein GEMINI_API_KEY gesetzt – KI-Funktionen (Rezepte, Marktkauf-Produkte) übersprungen.');
+    return;
+  }
+  if (OFFLINE) console.log('Ohne neue Gemini-Anfragen – nur zwischengespeicherte Ergebnisse.');
+  const ai = OFFLINE ? null : createClient(process.env.GEMINI_API_KEY);
+  const data = await readJson(DATA_FILE);
+  if (!data) {
+    console.log('Keine data/prospekte.json – übersprungen.');
+    return;
+  }
+
+  // 1. Rezepte (nur eine Anfrage – zuerst, damit sie sicher entstehen)
+  try {
+    const wissen = OFFLINE ? START_WISSEN.map((w) => w.text) : await loadWissen();
+    const recipes = await createRecipes(ai, data, wissen);
+    if (recipes) {
+      const week = {
+        ...recipes,
+        gueltigBis: data.aldi?.current?.validTo || data.marktkauf?.current?.validTo || null
+      };
+      await writeFile(REZEPTE_FILE, `${JSON.stringify(week, null, 1)}\n`);
+      console.log(`✓ ${recipes.rezepte.length} Rezepte der Woche`);
+    }
+  } catch (err) {
+    console.warn(`✗ Rezepte: ${err.message}`);
+  }
+  // 2. Marktkauf-Produkte aus den Prospektseiten (viele Anfragen)
+  if (NUR_REZEPTE) console.log('Nur Rezepte gewünscht – Prospekt nur aus dem Zwischenspeicher.');
+  try {
+    const products = await extractMarktkauf(ai);
+    if (products?.length && !data.marktkauf?.offers?.offers?.length) {
+      const current = data.marktkauf?.current || {};
+      const offers = products.map((p, i) => ({
+        id: `mk-${p.seite}-${i}`,
+        name: p.listenname.trim(),
+        brand: p.marke.trim(),
+        product: p.produkt.trim(),
+        price: p.preis.trim(),
+        unit: p.einheit.trim(),
+        basePrice: p.grundpreis.trim(),
+        validFrom: current.validFrom || null,
+        validTo: current.validTo || null,
+        group: p.kategorie,
+        page: p.seite,
+        image: null
+      }));
+      const groups = CATEGORY_NAMES.filter((g) => offers.some((o) => o.group === g));
+      offers.sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.page - b.page);
+      data.marktkauf.offers = { groups, offers, source: 'ki-prospekt' };
+      await writeFile(DATA_FILE, `${JSON.stringify(data, null, 1)}\n`);
+      console.log(`✓ Marktkauf: ${offers.length} Produkte aus dem Prospekt`);
+    }
+  } catch (err) {
+    console.warn(`✗ Marktkauf-Produkte: ${err.message}`);
+  }
+
+
+}
+
+main().catch((err) => {
+  // Die App soll trotzdem veröffentlicht werden
+  console.error('KI-Auswertung fehlgeschlagen:', err.message);
+});

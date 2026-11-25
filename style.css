@@ -210,7 +210,8 @@ main { padding: 0 20px; }
 .seg--store { margin: 14px 0 16px; }
 .seg--mini button { min-height: 32px; font-size: 13px; padding: 2px 4px; }
 .seg--recipes { margin-bottom: 14px; }
-.seg--recipes { grid-auto-columns: auto; }
+.seg--recipes { grid-auto-columns: 1fr; }
+.seg--recipes button { flex-direction: column; gap: 1px; white-space: normal; text-align: center; min-height: 44px; font-size: 13px; }
 
 .seg--filter {
   position: sticky; top: calc(var(--safe-top) + 8px); z-index: 15;
@@ -526,6 +527,50 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 .empty-card p { margin: 0 0 6px; }
 .empty-card strong { color: var(--text); font-size: 17px; font-weight: 600; }
 
+.recipe__save { margin-top: 12px; }
+.recipe__saved { display: block; padding: 10px 0 2px; text-align: center; font-size: 14px; font-weight: 600; color: var(--green); }
+
+/* ---------- Küchenhelfer (Chat) ---------- */
+.chat__log { display: flex; flex-direction: column; gap: 10px; }
+.bubble {
+  max-width: 86%; padding: 11px 15px;
+  border-radius: 22px; font-size: 16px; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.bubble--me { align-self: flex-end; background: var(--lilac); color: #fff; border-bottom-right-radius: 8px; }
+.bubble--bot { align-self: flex-start; background: var(--card); box-shadow: var(--shadow-sm); border-bottom-left-radius: 8px; }
+.bubble--error { background: var(--red-soft); color: var(--red); box-shadow: none; }
+.bubble--typing { display: flex; gap: 5px; padding: 15px 16px; }
+.bubble--typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); animation: blink 1.2s ease-in-out infinite; }
+.bubble--typing span:nth-child(2) { animation-delay: .2s; }
+.bubble--typing span:nth-child(3) { animation-delay: .4s; }
+.recipe--chat { margin: 0; }
+.chat-card { padding: 16px; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-sm); }
+.chat-card h4 { margin: 0 0 10px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
+.chat-card__row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.chat-card__row:first-of-type { border-top: 0; }
+.chat-card__row span:first-child { flex: 1; }
+.chat-card__done { font-size: 14px; font-weight: 600; color: var(--green); }
+.chat__reset { align-self: center; min-height: 38px; font-size: 14px; }
+.chat__ideas { margin-top: 4px; }
+.chat__setup input { margin: 12px 0 10px; }
+.chat__composer {
+  position: sticky; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 8px); z-index: 10;
+  display: flex; align-items: flex-end; gap: 8px;
+  margin-top: 16px; padding: 6px;
+  border-radius: 26px;
+  background: var(--bg-blur);
+  backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px);
+  box-shadow: var(--shadow);
+}
+.chat__composer textarea { min-height: 44px; padding: 11px 16px; border-radius: 22px; background: var(--card); }
+.mic--small { width: 44px; height: 44px; }
+.chat__send {
+  display: grid; place-items: center;
+  width: 44px; height: 44px; flex-shrink: 0;
+  border: 0; border-radius: 50%; background: var(--lilac); color: #fff;
+}
+
 /* ---------- Vorlieben ---------- */
 .memory { padding: 6px 20px 20px; }
 .memory__list { margin: 0 0 14px; padding: 0; list-style: none; }
@@ -551,7 +596,7 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 /* ---------- Tab-Bar (iOS) ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   max-width: 560px; margin: 0 auto;
   padding: 6px 8px calc(6px + var(--safe-bottom));
   background: var(--bg-blur);
