@@ -598,6 +598,12 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 .memory__empty { padding: 14px 0; color: var(--text-faint); }
 .memory__form { display: flex; gap: 8px; }
 .memory__form input { flex: 1; }
+.memory__swap { margin-top: 18px; padding-top: 14px; border-top: 0.5px solid var(--line, rgba(127,127,127,.25)); display: grid; gap: 8px; }
+.memory__swap-title { margin: 0; font-weight: 600; font-size: 15px; }
+.memory__swap-hint { margin: -4px 0 0; font-size: 13px; color: var(--text-soft); }
+.memory__swap-row { display: flex; align-items: center; gap: 6px; }
+.memory__swap-row input { flex: 1; min-width: 0; }
+.memory__swap-row span { color: var(--text-faint); }
 .memory__note { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--amber-soft); color: var(--amber); font-size: 13px; }
 
 .foot { padding: 30px 8px 0; text-align: center; font-size: 12px; color: var(--text-faint); }

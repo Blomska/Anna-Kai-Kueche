@@ -209,6 +209,16 @@
             <input type="text" id="memoryInput" maxlength="240" placeholder="z. B. Milch immer laktosefrei" aria-label="Neue Vorliebe">
             <button type="submit" class="btn btn--primary">Merken</button>
           </form>
+          <form class="memory__swap" id="swapForm" autocomplete="off">
+            <p class="memory__swap-title">Automatisch ersetzen</p>
+            <p class="memory__swap-hint">Wenn ihr links etwas auf die Liste schreibt, setzt die App rechts ein.</p>
+            <div class="memory__swap-row">
+              <input type="text" id="swapWenn" maxlength="60" placeholder="z. B. Quark" aria-label="Wenn ich schreibe" required>
+              <span aria-hidden="true">→</span>
+              <input type="text" id="swapDann" maxlength="80" placeholder="z. B. Magerquark" aria-label="dann setze auf die Liste" required>
+            </div>
+            <button type="submit" class="btn btn--tinted">Ersetzung merken</button>
+          </form>
           <p class="memory__note" id="memoryNote" hidden>Gerade nur auf diesem Handy gespeichert – die Firestore-Regel für „wissen" fehlt noch (siehe README).</p>
         </section>
         <p class="view__note">Tipp: Schreibt „<strong>keine Pilze</strong>“, dann werden Pilze in Rezepten markiert und nicht automatisch auf die Liste gesetzt.</p>

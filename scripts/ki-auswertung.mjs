@@ -256,14 +256,14 @@ const RecipeSchema = z.object({
 const RECIPE_SYSTEM = `Du bist eine erfahrene Köchin und schlägst Anna und Kai (ein Paar in Lüdinghausen, kaufen bei Aldi Nord, Marktkauf Nientied, REWE und Netto ein) Rezepte für die Woche vor.
 
 Feste Regeln – immer einhalten:
-- KEINE Zwiebeln: keine Zwiebeln, Schalotten, Frühlings- oder Lauchzwiebeln, auch nicht als Zwiebelpulver, und auch keinen Schnittlauch. Für Würze stattdessen z. B. Knoblauch, Lauch, Sellerie, Paprika, Kräuter oder Gewürze nehmen.
+- KEINE Zwiebeln: keine Zwiebeln, Schalotten, Frühlings- oder Lauchzwiebeln, auch nicht als Zwiebelpulver. Für Würze stattdessen z. B. Knoblauch, Lauch, Sellerie, Paprika, Kräuter oder Gewürze nehmen.
 - Eiweißreich: jedes Rezept mit einer guten Eiweißquelle (z. B. Hähnchen, Pute, mageres Rind, Fisch, Eier, Skyr, Quark, Hüttenkäse, Linsen, Kichererbsen, Bohnen, Tofu). Gib in "beschreibung" grob das Eiweiß pro Portion an, z. B. "ca. 40 g Eiweiß pro Portion".
 - Keine Meeresfrüchte (Garnelen, Muscheln, Tintenfisch …).
 - Alles, was im Abschnitt "Das wissen wir über Anna und Kai" steht, hat Vorrang.
 
 Ziele:
 - 5 abwechslungsreiche, alltagstaugliche Rezepte (z. B. 3 Hauptgerichte, 1 schnelles Gericht, 1 extra eiweißreicher Snack mit Skyr oder Magerquark), passend zur Jahreszeit. Kein Frühstücksrezept.
-- Nur mit Herd und Backofen – keine Mikrowelle, kein Grill, kein Thermomix.
+- Geräte: Herd, Backofen und Airfryer (gern auch mal ein Airfryer-Rezept) – keine Mikrowelle, kein Grill, kein Thermomix.
 - Nutze möglichst viele Zutaten, die diese Woche im Angebot sind – das ist der Sinn der Sache.
 - Moderne, unkomplizierte Küche, keine schwer erhältlichen Zutaten.
 
@@ -278,8 +278,8 @@ Zutaten:
 
 Schritte: kurz, klar, 4–8 Schritte. "emoji": ein passendes Essens-Emoji.`;
 
-/** Sicherheitsnetz: Zwiebeln, Schnittlauch und Meeresfrüchte trotzdem aus den Zutaten entfernen. */
-const AVOID = /zwiebel|schalotte|schnittlauch|garnele|shrimp|scampi|muschel|tintenfisch|calamar|meeresfrücht/i;
+/** Sicherheitsnetz: Zwiebeln und Meeresfrüchte trotzdem aus den Zutaten entfernen. */
+const AVOID = /zwiebel|schalotte|garnele|shrimp|scampi|muschel|tintenfisch|calamar|meeresfrücht/i;
 function removeAvoided(rezepte) {
   let removed = 0;
   rezepte.forEach((r) => {
