@@ -13,7 +13,7 @@
  * ------------------------------------------------------------------
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const APP_CACHE = `kueche-app-${CACHE_VERSION}`;
 const CDN_CACHE = 'kueche-cdn-v1';
 

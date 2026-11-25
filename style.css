@@ -35,6 +35,7 @@
   --aldi: #2B5BB5;
   --mk: #E2A400;
   --rewe: #CC071E;
+  --netto: #E8590C;
 
   /* Form */
   --radius-xl: 28px;
@@ -352,10 +353,11 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 .badge--aldi { background: color-mix(in srgb, var(--aldi) 10%, transparent); color: var(--aldi); }
 .badge--marktkauf { background: color-mix(in srgb, var(--mk) 16%, transparent); color: #8A6400; }
 .badge--rewe { background: color-mix(in srgb, var(--rewe) 9%, transparent); color: var(--rewe); }
+.badge--netto { background: color-mix(in srgb, var(--netto) 11%, transparent); color: #B9410A; }
 .badge--offer { background: var(--lilac-soft); color: var(--lilac-strong); }
 .badge--muted { background: var(--fill); color: var(--text-faint); }
 @media (prefers-color-scheme: dark) {
-  .badge--aldi { color: #8FB2F5; } .badge--marktkauf { color: #F0C64D; } .badge--rewe { color: #F27C8C; }
+  .badge--aldi { color: #8FB2F5; } .badge--marktkauf { color: #F0C64D; } .badge--rewe { color: #F27C8C; } .badge--netto { color: #FFA36B; }
 }
 .item__edit {
   display: grid; place-items: center;
@@ -393,7 +395,7 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 .share { margin-top: 22px; }
 
 /* ---------- Angebote ---------- */
-.pcards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pcards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .pcard {
   display: flex; flex-direction: column;
   padding: 0; border: 0;
@@ -406,13 +408,14 @@ select { appearance: none; -webkit-appearance: none; background-image: linear-gr
 .pcard:active { transform: scale(.97); }
 .pcard__cover {
   position: relative; display: grid; place-items: center;
-  aspect-ratio: 3 / 4; background: var(--lilac-mist); overflow: hidden;
+  aspect-ratio: 4 / 3; background: var(--lilac-mist); overflow: hidden;
 }
 .pcard__cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; }
 .pcard__logo { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
 .pcard--aldi .pcard__logo { color: var(--aldi); }
 .pcard--marktkauf .pcard__logo { color: #B88600; }
 .pcard--rewe .pcard__logo { color: var(--rewe); }
+.pcard--netto .pcard__logo { color: var(--netto); }
 .pcard__body { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px; }
 .pcard__body strong { font-size: 15px; }
 .pcard__body small { font-size: 12px; color: var(--text-soft); line-height: 1.3; }

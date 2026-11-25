@@ -467,13 +467,19 @@ async function loadRewe() {
  * (Netto-Filiale 6061) und liest danach die Angebotsseiten und den
  * Blätterkatalog-Link aus.
  */
+// Netto lässt Desktop-Browser-Kennungen von Servern oft nicht durch, eine Handy-Kennung schon
+const NETTO_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  'Accept-Language': 'de-DE'
+};
+
 async function nettoSession() {
   const jar = new Map();
   const go = async (url, opts = {}, hops = 0) => {
     const res = await fetch(url, {
       redirect: 'manual',
       ...opts,
-      headers: { ...HEADERS, Cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), ...(opts.headers || {}) }
+      headers: { ...NETTO_HEADERS, Cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), ...(opts.headers || {}) }
     });
     for (const c of res.headers.getSetCookie?.() || []) {
       const kv = c.split(';')[0];

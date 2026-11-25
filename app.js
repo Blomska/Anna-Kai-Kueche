@@ -13,7 +13,7 @@
  * {
  *   name:       string   – "Milch"
  *   qty:        string   – "2×", "500 g" oder ""
- *   store:      string   – "both" | "aldi" | "marktkauf" | "rewe"
+ *   store:      string   – "both" | "aldi" | "marktkauf" | "rewe" | "netto"
  *   category:   string   – Kategorie-ID aus categories.js
  *   done:       boolean
  *   doneAt:     number|null (ms)
@@ -23,7 +23,7 @@
  * }
  *
  * Angebote (Firestore: lists/{LIST_ID}/offers/{normalisierterName}):
- * { name: "Skyr", store: "aldi" | "marktkauf" | "rewe", price: "0,99 €", until: ms }
+ * { name: "Skyr", store: "aldi" | "marktkauf" | "rewe" | "netto", price: "0,99 €", until: ms }
  * Ein Angebot gilt automatisch bis Samstagabend der laufenden Woche und
  * wird an allen passenden Artikeln und Favoriten angezeigt.
  * Die Item-Felder isOffer/offerPrice bleiben für einen späteren
@@ -47,9 +47,9 @@ import { START_WISSEN, WISSEN_VERSION, WOCHENEINKAUF } from './wissen.js';
 const FIREBASE_VERSION = '10.12.2';
 const FIREBASE_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
 
-const STORE_LABELS = { both: 'Egal', aldi: 'Aldi', marktkauf: 'Marktkauf', rewe: 'REWE' };
-const STORES = ['aldi', 'marktkauf', 'rewe'];
-const STORE_NAMES = { aldi: 'Aldi Nord', marktkauf: 'Marktkauf Nientied', rewe: 'REWE Lüdinghausen' };
+const STORE_LABELS = { both: 'Egal', aldi: 'Aldi', marktkauf: 'Marktkauf', rewe: 'REWE', netto: 'Netto' };
+const STORES = ['aldi', 'marktkauf', 'rewe', 'netto'];
+const STORE_NAMES = { aldi: 'Aldi Nord', marktkauf: 'Marktkauf Nientied', rewe: 'REWE Lüdinghausen', netto: 'Netto Lüdinghausen' };
 const CHECK_ANIMATION_MS = 600;
 const FAVORITES_LIMIT = 12;
 const STARTER_FAVORITES = ['Eier', 'Skyr', 'Hähnchenbrust', 'Magerquark', 'Milch', 'Brot', 'Bananen', 'Tomaten', 'Käse', 'Kaffee'];
@@ -1157,7 +1157,7 @@ function formatPrice(raw) {
 
 function offerRowHtml(row) {
   const draft = state.offerDraft[row.key] || { store: '', price: '' };
-  const seg = [['', 'Kein'], ['aldi', 'Aldi'], ['marktkauf', 'MK'], ['rewe', 'REWE']].map(([store, label]) => `
+  const seg = [['', 'Kein'], ['aldi', 'Aldi'], ['marktkauf', 'MK'], ['rewe', 'REWE'], ['netto', 'Netto']].map(([store, label]) => `
       <button type="button" class="${draft.store === store ? 'is-active' : ''}"
               role="radio" aria-checked="${draft.store === store}" data-offer-store="${store}">${label}</button>`).join('');
   return `
@@ -1250,7 +1250,8 @@ function flyerFor(store, week = 'current') {
 
 function renderProspektCards() {
   for (const store of STORES) {
-    const suffix = { aldi: 'Aldi', marktkauf: 'Marktkauf', rewe: 'Rewe' }[store];
+    const suffix = { aldi: 'Aldi', marktkauf: 'Marktkauf', rewe: 'Rewe', netto: 'Netto' }[store];
+    if (!img || !label) continue;
     const img = $(`#cover${suffix}`);
     const label = $(`#valid${suffix}`);
     const current = flyerFor(store, 'current');
@@ -1368,8 +1369,10 @@ function renderFlyer(flyer) {
   const isMk = viewer.store === 'marktkauf';
   const isRewe = viewer.store === 'rewe';
   // Marktkauf: offizielle EDEKA-Prospektseite des Markts (zuverlässiger als der Blätterkatalog-Anbieter)
-  const pageUrl = isMk || isRewe ? OFFER_LINKS[viewer.store] : (state.prospekte?.aldi?.pageUrl || OFFER_LINKS.aldi);
-  const shopName = { aldi: 'Aldi', marktkauf: 'EDEKA/Marktkauf', rewe: 'REWE' }[viewer.store];
+  const pageUrl = viewer.store === 'aldi'
+    ? (state.prospekte?.aldi?.pageUrl || OFFER_LINKS.aldi)
+    : (state.prospekte?.[viewer.store]?.pageUrl || OFFER_LINKS[viewer.store]);
+  const shopName = { aldi: 'Aldi', marktkauf: 'EDEKA/Marktkauf', rewe: 'REWE', netto: 'Netto' }[viewer.store];
   const fallback = `
     <a class="btn btn--primary btn--block" href="${escapeHtml(pageUrl)}" target="_blank" rel="noopener noreferrer">
       Prospekt bei ${shopName} ansehen ↗
@@ -2227,7 +2230,7 @@ function renderRecipes() {
   if (tab === 'passt') {
     const offerCount = STORES.reduce((n, s) => n + storeOffers(s).length, 0) + Object.keys(state.offers || {}).length;
     els.recipes.innerHTML = head + (matches.length
-      ? `<p class="view__note">Rezepte aus eurem Kochbuch, bei denen Zutaten gerade bei Aldi, Marktkauf oder REWE im Angebot sind.</p>
+      ? `<p class="view__note">Rezepte aus eurem Kochbuch, bei denen Zutaten gerade bei Aldi, Marktkauf, REWE oder Netto im Angebot sind.</p>
          ${matches.map((m) => recipeCardHtml(m.r, `k-${m.r.id}`, { mode: 'passt', deals: m.deals })).join('')}`
       : `<div class="empty-card">
           <p><strong>${book.length ? 'Gerade passt nichts' : 'Noch keine Rezepte'}</strong></p>
@@ -2298,7 +2301,7 @@ function renderKochbuchList() {
 
 /** Fügt Artikel [{ name, menge, laden }] hinzu – gruppiert nach Laden. */
 function addSuggested(items) {
-  const byStore = { both: [], aldi: [], marktkauf: [], rewe: [] };
+  const byStore = { both: [], aldi: [], marktkauf: [], rewe: [], netto: [] };
   items.forEach((it) => {
     const store = STORES.includes(it.laden) ? it.laden : 'both';
     byStore[store].push({ name: it.name.charAt(0).toUpperCase() + it.name.slice(1), qty: it.menge || '' });
@@ -2707,6 +2710,7 @@ function buildShareText() {
     formatSection('🟠 *Aldi*', open.filter((i) => i.store === 'aldi'));
     formatSection('🔵 *Marktkauf*', open.filter((i) => i.store === 'marktkauf'));
     formatSection('🔴 *REWE*', open.filter((i) => i.store === 'rewe'));
+    formatSection('🟡 *Netto*', open.filter((i) => i.store === 'netto'));
     const both = open.filter((i) => i.store === 'both');
     const hasStoreSpecific = both.length !== open.length;
     formatSection(hasStoreSpecific ? '🟢 *Egal wo*' : '🟢 *Alles*', both);
