@@ -3022,6 +3022,20 @@ function bindEvents() {
     input.value = '';
   });
 
+  $('#swapForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const wenn = $('#swapWenn').value.trim();
+    const dann = $('#swapDann').value.trim();
+    if (!wenn || !dann) return;
+    if ((state.wissen || []).some((w) => w.wenn && normalize(w.wenn) === normalize(wenn))) {
+      showToast(`Für „${wenn}“ gibt es schon eine Ersetzung`);
+      return;
+    }
+    addWissen({ text: `„${wenn}“ immer als „${dann}“ kaufen.`, wenn, dann });
+    $('#swapWenn').value = '';
+    $('#swapDann').value = '';
+  });
+
   // Prospekte & Angebote
   $$('[data-open-prospekt]').forEach((btn) => {
     btn.addEventListener('click', () => openProspekt(btn.dataset.openProspekt));
