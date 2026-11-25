@@ -1925,8 +1925,52 @@ function handleKochbuch(map, meta = {}) {
   updateNavBadges(state.items.filter((i) => !i.done).length);
 }
 
+/** Nährwerte pro Portion säubern: { kcal, eiweiss_g, kohlenhydrate_g, fett_g } oder null. */
+function cleanNaehrwerte(n) {
+  if (!n || typeof n !== 'object') return null;
+  const num = (v) => Math.max(0, Math.min(5000, Math.round(Number(v) || 0)));
+  const out = { kcal: num(n.kcal), eiweiss_g: num(n.eiweiss_g), kohlenhydrate_g: num(n.kohlenhydrate_g), fett_g: num(n.fett_g) };
+  return out.kcal || out.eiweiss_g ? out : null;
+}
+
+function naehrwerteHtml(r) {
+  const n = cleanNaehrwerte(r.naehrwerte);
+  if (!n) return '';
+  const viel = n.eiweiss_g >= 30;
+  return `<p class="recipe__protein${viel ? ' is-high' : ''}" title="geschätzt pro Portion: ${n.kcal} kcal, ${n.eiweiss_g} g Eiweiß, ${n.kohlenhydrate_g} g Kohlenhydrate, ${n.fett_g} g Fett">
+    <strong>${n.eiweiss_g} g Eiweiß</strong> · ${n.kcal} kcal · ${n.kohlenhydrate_g} g KH · ${n.fett_g} g Fett <small>pro Portion, geschätzt</small></p>`;
+}
+
+const naehrwerteBusy = new Set();
+
+/** Nährwerte für ein Kochbuch-Rezept vom Helfer schätzen lassen und speichern. */
+async function estimateNaehrwerte(id, { quiet = false } = {}) {
+  const code = readJSON(CODE_LS, '');
+  const entry = (state.kochbuch || []).find((r) => r.id === id);
+  if (!entry || !CHAT_URL || !code || naehrwerteBusy.has(id)) return;
+  naehrwerteBusy.add(id);
+  if (!quiet) renderRecipes();
+  try {
+    const res = await fetch(`${CHAT_URL.replace(/\/$/, '')}/naehrwerte`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Zugangscode': code },
+      body: JSON.stringify({ rezept: { titel: entry.titel, portionen: entry.portionen, zutaten: entry.zutaten } })
+    });
+    const data = await res.json().catch(() => ({}));
+    const n = cleanNaehrwerte(data.naehrwerte);
+    if (n) updateKochbuch(id, { naehrwerte: n });
+    else if (!quiet) showToast(data.fehler || 'Konnte die Nährwerte gerade nicht schätzen.');
+  } catch {
+    if (!quiet) showToast('Keine Verbindung – bitte später nochmal.');
+  }
+  naehrwerteBusy.delete(id);
+  renderRecipes();
+}
+
 function kochbuchEntry(r, herkunft) {
+  const naehrwerte = cleanNaehrwerte(r.naehrwerte);
   return {
+    ...(naehrwerte ? { naehrwerte } : {}),
     titel: String(r.titel).trim().slice(0, 120),
     beschreibung: String(r.beschreibung || '').slice(0, 240),
     portionen: Math.max(1, Math.min(20, Number(r.portionen) || 2)),
@@ -2022,11 +2066,14 @@ function saveRecipeForm() {
     schwierigkeit: old?.schwierigkeit
   }, old?.herkunft || 'eigenes');
   if (old) entry.createdAt = old.createdAt || Date.now();
+  const sameIngredients = old && JSON.stringify(old.zutaten) === JSON.stringify(entry.zutaten) && old.portionen === entry.portionen;
+  if (sameIngredients && cleanNaehrwerte(old.naehrwerte)) entry.naehrwerte = cleanNaehrwerte(old.naehrwerte);
   const id = editId || makeId();
   state.rezepteTab = 'kochbuch';
   state.openRecipes.add(`k-${id}`);
   closeRecipeForm();
   backend.setMap('kochbuch', { [id]: entry });
+  if (!entry.naehrwerte) setTimeout(() => estimateNaehrwerte(id, { quiet: true }), 800);
   showToast(old ? 'Rezept gespeichert' : `„${titel}“ steht jetzt im Kochbuch`);
   vibrate(15);
 }
@@ -2248,6 +2295,7 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
           </button>` : ''}
         </div>
         ${r.beschreibung ? `<p class="recipe__desc">${escapeHtml(r.beschreibung)}</p>` : ''}
+        ${naehrwerteHtml(r)}
         ${inBook && r.notiz ? `<p class="recipe__note">${escapeHtml(r.notiz)}</p>` : ''}
         ${dealSummary}
         ${recipeDealsList.length ? `<div class="recipe__deals">${recipeDealsList.slice(0, 5).map(({ z, offer }) => `<span class="recipe__deal">${escapeHtml(z.name)} · ${escapeHtml(offerLabel(offer))}</span>`).join('')}</div>` : ''}
@@ -2272,6 +2320,9 @@ function recipeCardHtml(r, key, { mode = 'kochbuch', deals = null } = {}) {
           </div>
           <h4>Zutaten</h4>
           <div class="ingr-list">${ingredients}</div>
+          ${inBook && !cleanNaehrwerte(r.naehrwerte) && CHAT_URL ? `
+          <button type="button" class="btn btn--plain btn--block recipe__estimate" data-kb-naehrwerte="${id}" ${naehrwerteBusy.has(r.id) ? 'disabled' : ''}>
+            ${naehrwerteBusy.has(r.id) ? 'Schätze Eiweiß & Kalorien …' : 'Eiweiß & Kalorien schätzen'}</button>` : ''}
           <button type="button" class="btn btn--primary btn--block recipe__add" data-recipe-add="${k}">Ausgewählte auf die Liste</button>
           ${(r.schritte || []).length ? `<button type="button" class="btn btn--tinted btn--block recipe__cook" data-cook="${k}">Kochmodus starten</button>
           <h4>Zubereitung</h4>
@@ -2358,7 +2409,8 @@ function renderRecipes() {
   const filter = state.kbFilter || 'alle';
   const cats = KB_KATEGORIEN.filter((c) => book.some((r) => r.kategorie === c));
   const hasFav = book.some((r) => r.favorit);
-  if (!['alle', 'lieblinge', ...cats].includes(filter)) state.kbFilter = 'alle';
+  const hasProtein = book.some((r) => (cleanNaehrwerte(r.naehrwerte)?.eiweiss_g || 0) >= 30);
+  if (!['alle', 'lieblinge', 'eiweiss', ...cats].includes(filter)) state.kbFilter = 'alle';
   const chip = (id, label) => `<button type="button" class="chip${(state.kbFilter || 'alle') === id ? ' is-active' : ''}" data-kb-filter="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
 
   els.recipes.innerHTML = head + `
@@ -2367,6 +2419,7 @@ function renderRecipes() {
       <div class="chips chips--scroll">
         ${chip('alle', 'Alle')}
         ${hasFav ? chip('lieblinge', 'Lieblinge') : ''}
+        ${hasProtein ? chip('eiweiss', 'Eiweißreich') : ''}
         ${cats.map((c) => chip(c, c)).join('')}
       </div>
     </div>
@@ -2381,7 +2434,8 @@ function renderKochbuchList() {
   const filter = state.kbFilter || 'alle';
   const book = (state.kochbuch || []).filter((r) => {
     if (filter === 'lieblinge' && !r.favorit) return false;
-    if (filter !== 'alle' && filter !== 'lieblinge' && r.kategorie !== filter) return false;
+    if (filter === 'eiweiss' && (cleanNaehrwerte(r.naehrwerte)?.eiweiss_g || 0) < 30) return false;
+    if (!['alle', 'lieblinge', 'eiweiss'].includes(filter) && r.kategorie !== filter) return false;
     if (!q) return true;
     return normalize(`${r.titel} ${r.beschreibung} ${r.notiz || ''} ${(r.zutaten || []).map((z) => z.name).join(' ')}`).includes(q);
   });
@@ -2391,7 +2445,9 @@ function renderKochbuchList() {
   }
   const sections = [];
   const favs = book.filter((r) => r.favorit);
-  if (filter === 'lieblinge') sections.push(['Lieblingsrezepte', favs]);
+  if (filter === 'eiweiss') {
+    sections.push(['Mindestens 30 g Eiweiß pro Portion', [...book].sort((a, b) => b.naehrwerte.eiweiss_g - a.naehrwerte.eiweiss_g)]);
+  } else if (filter === 'lieblinge') sections.push(['Lieblingsrezepte', favs]);
   else {
     if (favs.length) sections.push(['Lieblingsrezepte', favs]);
     KB_KATEGORIEN.forEach((c) => {
@@ -2512,6 +2568,12 @@ function handleRecipeClick(e, container) {
       updateKochbuch(entry.id, { favorit: !entry.favorit });
       vibrate(10);
     }
+    return true;
+  }
+  const est = t.closest('[data-kb-naehrwerte]');
+  if (est) {
+    if (!readJSON(CODE_LS, '')) showToast('Dafür einmal im Helfer den Zugangscode eingeben.');
+    else estimateNaehrwerte(est.dataset.kbNaehrwerte);
     return true;
   }
   const del = t.closest('[data-kb-delete]');

@@ -817,3 +817,10 @@ dialog { color: var(--text); }
 .bubble--other { background: var(--lavender); color: var(--text); }
 .name-pick { display: flex; gap: 10px; margin-top: 12px; }
 .name-pick .btn { flex: 1; }
+
+/* ---------- Eiweiß im Blick ---------- */
+.recipe__protein { margin: 6px 0 0; font-size: 14px; color: var(--text-soft); }
+.recipe__protein strong { color: var(--lilac-strong); }
+.recipe__protein.is-high strong { color: var(--green); }
+.recipe__protein small { display: block; font-size: 12px; color: var(--text-faint); }
+.recipe__estimate { margin-top: 10px; }

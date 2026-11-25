@@ -249,7 +249,13 @@ const RecipeSchema = z.object({
       preis: z.string(),
       vorrat: z.boolean()
     })),
-    schritte: z.array(z.string())
+    schritte: z.array(z.string()),
+    naehrwerte: z.object({
+      kcal: z.number().int(),
+      eiweiss_g: z.number().int(),
+      kohlenhydrate_g: z.number().int(),
+      fett_g: z.number().int()
+    })
   }))
 });
 
@@ -276,7 +282,8 @@ Zutaten:
 
 "kategorie": Hauptgerichte, Schnelle Gerichte (bis ca. 25 Min), Frühstück, Suppen & Eintöpfe, Salate & Bowls, Snacks & Süßes oder Backen.
 
-Schritte: kurz, klar, 4–8 Schritte. "emoji": ein passendes Essens-Emoji.`;
+Schritte: kurz, klar, 4–8 Schritte. "emoji": ein passendes Essens-Emoji.
+"naehrwerte": realistisch geschätzt PRO PORTION (kcal, Eiweiß, Kohlenhydrate, Fett in Gramm).`;
 
 /** Sicherheitsnetz: Zwiebeln und Meeresfrüchte trotzdem aus den Zutaten entfernen. */
 const AVOID = /zwiebel|schalotte|garnele|shrimp|scampi|muschel|tintenfisch|calamar|meeresfrücht/i;
@@ -308,7 +315,7 @@ async function createRecipes(ai, data, wissen = []) {
     return null;
   }
   lines.sort();
-  const hash = sha(`${lines.join('\n')}\n${wissen.join('\n')}`);
+  const hash = sha(`${RECIPE_SYSTEM}\n${lines.join('\n')}\n${wissen.join('\n')}`);
 
   return cached('rezepte', hash, async () => {
     console.log(`  Gemini erstellt Rezepte aus ${lines.length} Angeboten …`);

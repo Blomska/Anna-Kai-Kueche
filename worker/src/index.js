@@ -21,6 +21,13 @@ const MAX_MESSAGES = 24;
 const MAX_MESSAGE_CHARS = 2000;
 const RATE_LIMIT_PER_HOUR = 40;
 
+const NaehrwerteSchema = z.object({
+  kcal: z.number().int(),
+  eiweiss_g: z.number().int(),
+  kohlenhydrate_g: z.number().int(),
+  fett_g: z.number().int()
+});
+
 const RecipeSchema = z.object({
   titel: z.string(),
   emoji: z.string(),
@@ -37,7 +44,8 @@ const RecipeSchema = z.object({
     preis: z.string(),
     vorrat: z.boolean()
   })),
-  schritte: z.array(z.string())
+  schritte: z.array(z.string()),
+  naehrwerte: NaehrwerteSchema
 });
 
 const ReplySchema = z.object({
@@ -78,6 +86,7 @@ Wie du antwortest:
   • "zutaten" mit Mengen für die genannte Personenzahl (sonst 2), "vorrat": true für Salz, Pfeffer, Öl, Mehl, Zucker, Gewürze, Brühe.
   • "im_angebot"/"preis" nur, wenn die Zutat in den Angeboten dieser Woche steht (Preis wie angegeben), sonst false und "".
   • "schritte": 4–8 kurze, klare Schritte. "emoji": ein passendes Essens-Emoji.
+  • "naehrwerte": realistisch geschätzt PRO PORTION (kcal, Eiweiß, Kohlenhydrate, Fett in Gramm).
   • In "antwort" dann nur kurz beschreiben, was es gibt – die App zeigt das Rezept als Karte, die man mit „Ins Kochbuch“ speichern kann.
 - Erzählt jemand ein EIGENES Rezept oder will eins ins Kochbuch eintragen, schreib es sauber als Rezept in "rezepte": Zutaten, Mengen und Schritte übernehmen, nur ordnen und fehlende Kleinigkeiten ergänzen. Fehlt Wichtiges, frag in "antwort" nach.
 - "kategorie": Hauptgerichte, Schnelle Gerichte (bis ca. 25 Min), Frühstück, Suppen & Eintöpfe, Salate & Bowls, Snacks & Süßes oder Backen.
@@ -156,6 +165,32 @@ function validMessages(messages) {
   return clean;
 }
 
+const NAEHRWERTE_SYSTEM = `Du schätzt Nährwerte von Rezepten. Rechne mit üblichen Nährwerttabellen (z. B. BLS) und den angegebenen Mengen.
+Gib die Werte PRO PORTION an: kcal, Eiweiß, Kohlenhydrate und Fett in Gramm, gerundet auf ganze Zahlen.
+Zutaten ohne Menge (Salz, Gewürze) kaum mitrechnen, Öl mit ca. 1 EL pro Rezept, wenn nichts dasteht.`;
+
+/** Nährwerte für ein Rezept schätzen (Kochbuch-Rezepte ohne Werte). */
+async function handleNaehrwerte(body, env, cors) {
+  const r = body?.rezept;
+  if (!r || typeof r.titel !== 'string' || !Array.isArray(r.zutaten) || !r.zutaten.length) {
+    return json({ fehler: 'Ungültiges Rezept' }, 400, cors);
+  }
+  const portionen = Math.max(1, Math.min(20, Number(r.portionen) || 2));
+  const zutaten = r.zutaten.slice(0, 60)
+    .map((z) => `- ${String(z?.menge || '').slice(0, 30)} ${String(z?.name || '').slice(0, 80)}`.trim());
+  const ai = createClient(env.GEMINI_API_KEY, 25000);
+  const out = await generateJson(ai, {
+    system: NAEHRWERTE_SYSTEM,
+    contents: [{ role: 'user', parts: [{ text: `Rezept: ${r.titel.slice(0, 120)}\nPortionen: ${portionen}\nZutaten:\n${zutaten.join('\n')}` }] }],
+    schema: z.object({ naehrwerte: NaehrwerteSchema }),
+    maxTokens: 400,
+    model: env.GEMINI_MODEL || undefined,
+    retryDelayMs: 1500,
+    maxModels: 3
+  });
+  return json({ naehrwerte: out.naehrwerte }, 200, cors);
+}
+
 /* ---------------- Worker ---------------- */
 
 export default {
@@ -177,7 +212,8 @@ export default {
     if (url.pathname === '/status') {
       return json({ ok: Boolean(env.GEMINI_API_KEY), zugangscode: Boolean(env.FAMILY_CODE) }, 200, cors);
     }
-    if (url.pathname !== '/chat' || request.method !== 'POST') return json({ fehler: 'Nicht gefunden' }, 404, cors);
+    const routes = ['/chat', '/naehrwerte'];
+    if (!routes.includes(url.pathname) || request.method !== 'POST') return json({ fehler: 'Nicht gefunden' }, 404, cors);
     if (!originOk) return json({ fehler: 'Nicht erlaubt' }, 403, cors);
     if (env.FAMILY_CODE && request.headers.get('X-Zugangscode') !== env.FAMILY_CODE) {
       return json({ fehler: 'code', antwort: 'Der Zugangscode stimmt nicht.' }, 401, cors);
@@ -195,6 +231,15 @@ export default {
     } catch {
       return json({ fehler: 'Ungültige Anfrage' }, 400, cors);
     }
+    if (url.pathname === '/naehrwerte') {
+      try {
+        return await handleNaehrwerte(body, env, cors);
+      } catch (err) {
+        console.error('[Nährwerte]', err);
+        return json({ fehler: 'Konnte die Nährwerte gerade nicht schätzen.' }, 503, cors);
+      }
+    }
+
     const messages = validMessages(body?.messages);
     if (!messages) return json({ fehler: 'Ungültige Nachrichten' }, 400, cors);
 
