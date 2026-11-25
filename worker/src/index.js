@@ -32,7 +32,7 @@ const RecipeSchema = z.object({
   zutaten: z.array(z.object({
     name: z.string(),
     menge: z.string(),
-    laden: z.enum(['aldi', 'marktkauf', 'rewe', 'egal']),
+    laden: z.enum(['aldi', 'marktkauf', 'rewe', 'netto', 'egal']),
     im_angebot: z.boolean(),
     preis: z.string(),
     vorrat: z.boolean()
@@ -45,7 +45,7 @@ const ReplySchema = z.object({
   artikel: z.array(z.object({
     name: z.string(),
     menge: z.string(),
-    laden: z.enum(['aldi', 'marktkauf', 'rewe', 'egal'])
+    laden: z.enum(['aldi', 'marktkauf', 'rewe', 'netto', 'egal'])
   })),
   rezepte: z.array(RecipeSchema),
   merken: z.array(z.object({
@@ -55,7 +55,7 @@ const ReplySchema = z.object({
   }))
 });
 
-const SYSTEM_PROMPT = `Du bist der Küchenhelfer in der App „Anna & Kai Küche“. Dir schreiben Anna oder Kai, ein Paar aus Lüdinghausen. Sie kaufen bei Aldi Nord, Marktkauf Nientied und REWE ein.
+const SYSTEM_PROMPT = `Du bist der Küchenhelfer in der App „Anna & Kai Küche“. Dir schreiben Anna oder Kai, ein Paar aus Lüdinghausen. Sie kaufen bei Aldi Nord, Marktkauf Nientied, REWE und Netto ein.
 
 Feste Regeln – immer einhalten:
 - KEINE Zwiebeln: Schlage nie Zwiebeln, Schalotten, Frühlings- oder Lauchzwiebeln vor, auch nicht als Zwiebelpulver – weder in "artikel" noch in "rezepte". Würze stattdessen z. B. mit Knoblauch, Lauch, Sellerie, Kräutern oder Gewürzen. Steht in einem eigenen Rezept von Anna oder Kai eine Zwiebel, übernimm das Rezept, weise aber kurz auf eine Alternative hin.
@@ -69,7 +69,7 @@ Wie du antwortest:
 - Wenn Einkäufe sinnvoll sind, fülle "artikel" mit allem, was gekauft werden muss:
   • "name" so, wie man es auf den Einkaufszettel schreibt (z. B. "Hähnchenbrust", "Skyr", "Paprika").
   • "menge" kurz (z. B. "2 Stück", "500 g", "1 Glas"); leer, wenn egal.
-  • "laden": "aldi", "marktkauf" oder "rewe", wenn es dort im Angebot ist, sonst "egal".
+  • "laden": "aldi", "marktkauf", "rewe" oder "netto", wenn es dort im Angebot ist, sonst "egal".
   • Lass weg, was schon auf der Liste steht, und typische Vorräte (Salz, Pfeffer, Öl, Zucker, Mehl), außer danach wird gefragt.
 - Wenn nur etwas gefragt wird (z. B. ein Tipp), antworte einfach – "artikel" darf dann leer sein.
 - Sag in der Antwort nicht, dass du die Artikel "unten" auflistest – die App zeigt sie automatisch zum Abhaken an. Ein kurzer Satz reicht.
@@ -117,14 +117,14 @@ async function loadJson(url) {
   }
 }
 
-const NON_FOOD = /mode|deko|schlafzimmer|pflanzen|kosmetik|haushalt|drogerie|garten|technik|elektro|spielzeug|tier/i;
+const NON_FOOD = /mode|deko|schlafzimmer|pflanzen|kosmetik|haushalt|drogerie|garten|technik|elektro|spielzeug|spielsachen|tier/i;
 
 /** Angebote der Woche als kompakter Text (ändert sich selten → gut für Prompt-Caching). */
 async function offersContext(env) {
   const base = env.DATA_URL || '';
   const [data, recipes] = await Promise.all([loadJson(`${base}prospekte.json`), loadJson(`${base}rezepte.json`)]);
   const lines = [];
-  for (const [store, label] of [['aldi', 'Aldi'], ['marktkauf', 'Marktkauf'], ['rewe', 'REWE']]) {
+  for (const [store, label] of [['aldi', 'Aldi'], ['marktkauf', 'Marktkauf'], ['rewe', 'REWE'], ['netto', 'Netto']]) {
     for (const o of data?.[store]?.offers?.offers || []) {
       if (NON_FOOD.test(o.group || '')) continue;
       lines.push(`${label} | ${[o.brand, o.name].filter(Boolean).join(' ')} | ${o.price}${o.validTo ? ` | bis ${o.validTo}` : ''}`);

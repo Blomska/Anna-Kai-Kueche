@@ -8,7 +8,7 @@
  *     Seitenbildern (data/mk-seiten/) herausgeschrieben – inkl. Seitenzahl.
  *     → In der App kann man jedes Produkt antippen und auf die Liste setzen.
  *  2. Rezepte der Woche: 5 Rezepte für Anna & Kai aus den aktuellen Angeboten
- *     (Aldi, Marktkauf, REWE falls verfügbar) → data/rezepte.json
+ *     (Aldi, Marktkauf, Netto, REWE falls verfügbar) → data/rezepte.json
  *
  * Benötigt den Gemini-Schlüssel als GEMINI_API_KEY – im Workflow kommt er aus
  * dem GitHub-Secret GEMINIAPIKEYANNA (eigenes Kontingent). Ohne Schlüssel
@@ -244,7 +244,7 @@ const RecipeSchema = z.object({
     zutaten: z.array(z.object({
       name: z.string(),
       menge: z.string(),
-      laden: z.enum(['aldi', 'marktkauf', 'rewe', 'egal']),
+      laden: z.enum(['aldi', 'marktkauf', 'rewe', 'netto', 'egal']),
       im_angebot: z.boolean(),
       preis: z.string(),
       vorrat: z.boolean()
@@ -253,7 +253,7 @@ const RecipeSchema = z.object({
   }))
 });
 
-const RECIPE_SYSTEM = `Du bist eine erfahrene Köchin und schlägst Anna und Kai (ein Paar in Lüdinghausen, kaufen bei Aldi Nord, Marktkauf Nientied und REWE ein) Rezepte für die Woche vor.
+const RECIPE_SYSTEM = `Du bist eine erfahrene Köchin und schlägst Anna und Kai (ein Paar in Lüdinghausen, kaufen bei Aldi Nord, Marktkauf Nientied, REWE und Netto ein) Rezepte für die Woche vor.
 
 Feste Regeln – immer einhalten:
 - KEINE Zwiebeln: keine Zwiebeln, Schalotten, Frühlings- oder Lauchzwiebeln, auch nicht als Zwiebelpulver. Für Würze stattdessen z. B. Knoblauch, Lauch, Sellerie, Paprika, Kräuter oder Gewürze nehmen.
@@ -267,7 +267,7 @@ Ziele:
 
 Zutaten:
 - "name" so, wie man es auf den Einkaufszettel schreibt (z. B. "Hähnchenbrust", "Paprika", "Skyr").
-- "laden": "aldi", "marktkauf" oder "rewe", wenn die Zutat dort im Angebot ist, sonst "egal".
+- "laden": "aldi", "marktkauf", "rewe" oder "netto", wenn die Zutat dort im Angebot ist, sonst "egal".
 - "im_angebot" und "preis" nur für echte Angebote aus der Liste (Preis wie angegeben), sonst false und "".
 - "vorrat": true für Dinge, die man meist zu Hause hat (Salz, Pfeffer, Öl, Mehl, Zucker, Gewürze, Brühe).
 - "portionen": 2, außer die Vorlieben sagen etwas anderes.
@@ -289,7 +289,7 @@ function removeAvoided(rezepte) {
   return rezepte;
 }
 
-const NON_FOOD = /mode|deko|schlafzimmer|pflanzen|kosmetik|haushalt|drogerie|garten|technik|elektro|spielzeug|tier/i;
+const NON_FOOD = /mode|deko|schlafzimmer|pflanzen|kosmetik|haushalt|drogerie|garten|technik|elektro|spielzeug|spielsachen|tier/i;
 
 async function createRecipes(ai, data, wissen = []) {
   const lines = [];
@@ -300,6 +300,7 @@ async function createRecipes(ai, data, wissen = []) {
   (data?.aldi?.offers?.offers || []).forEach((o) => add('Aldi', o));
   (data?.marktkauf?.offers?.offers || []).forEach((o) => add('Marktkauf', o));
   (data?.rewe?.offers?.offers || []).forEach((o) => add('REWE', o));
+  (data?.netto?.offers?.offers || []).forEach((o) => add('Netto', o));
   if (lines.length < 10) {
     console.log('  Zu wenige Angebote für Rezepte – übersprungen');
     return null;

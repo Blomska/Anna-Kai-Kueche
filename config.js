@@ -53,7 +53,9 @@ export const OFFER_LINKS = {
   marktkauf: 'https://www.edeka.de/markt-id/10008010/prospekt.jsp',
   aldi: 'https://www.aldi-nord.de/prospekte.html',
   // REWE Markt Lüdinghausen, Konrad-Adenauer-Str. 6 (REWE Markt-ID 250345)
-  rewe: 'https://www.rewe.de/angebote/luedinghausen/250345/rewe-markt-konrad-adenauer-str-6/'
+  rewe: 'https://www.rewe.de/angebote/luedinghausen/250345/rewe-markt-konrad-adenauer-str-6/',
+  // Netto Marken-Discount Lüdinghausen, Olfener Str. 19 (Netto-Filiale 6061)
+  netto: 'https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm/6061'
 };
 
 /** Hilfsfunktion: Ist Firebase eingerichtet? */
