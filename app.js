@@ -39,6 +39,7 @@ import {
   isFirebaseConfigured
 } from './config.js';
 import { START_WISSEN, WISSEN_VERSION, WOCHENEINKAUF } from './wissen.js';
+import { parseRezeptText } from './rezeptformat.js';
 
 /* ================================================================
  * 1. Konstanten & Hilfsfunktionen
@@ -2116,12 +2117,67 @@ async function runImport(payload, herkunft) {
   importBusy = false;
 }
 
+/* ---------- Rezept einfügen (fertig von der eigenen KI, z. B. Gemini-Gem, ohne App-KI) ---------- */
+
+/** Text im Rezeptformat ins Kochbuch übernehmen. Gibt die Zahl der erkannten Rezepte zurück. */
+function saveFormattedRecipes(text) {
+  const found = parseRezeptText(text);
+  if (!found.length) return 0;
+  let firstId = null;
+  found.forEach(({ rezept, hinweis }) => {
+    const id = addToKochbuch({ ...rezept, notiz: hinweis || '' }, 'gem');
+    if (id && !firstId) firstId = id;
+    if (id && !rezept.naehrwerte) setTimeout(() => estimateNaehrwerte(id, { quiet: true }), 800);
+  });
+  if (found.length > 1 && firstId) showToast(`${found.length} Rezepte stehen jetzt im Kochbuch`);
+  if (firstId) {
+    state.rezepteTab = 'kochbuch';
+    state.kbFilter = 'alle';
+    state.kbSearch = '';
+    state.openRecipes.add(`k-${firstId}`);
+    showView('kochbuch');
+  }
+  return found.length;
+}
+
+function pasteStatus(text, error = false) {
+  const el = $('#pasteStatus');
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.toggle('is-error', error);
+}
+
+function openPasteDialog(prefill = '', message = '') {
+  $('#pasteText').value = prefill;
+  pasteStatus(message, Boolean(message));
+  const dlg = $('#pasteDialog');
+  if (!dlg.open) dlg.showModal();
+}
+
+/** Knopf „Rezept einfügen": erst direkt aus der Zwischenablage, sonst Feld zum Einfügen. */
+async function pasteRecipe() {
+  let clip = '';
+  try {
+    if (navigator.clipboard?.readText) clip = await navigator.clipboard.readText();
+  } catch { /* nicht erlaubt – dann per Hand einfügen */ }
+  if (clip && saveFormattedRecipes(clip)) return;
+  openPasteDialog('', clip.trim()
+    ? 'In der Zwischenablage ist kein fertiges Rezept. Kopiere zuerst die ganze Antwort aus Gemini.'
+    : '');
+}
+
 /** Geteilter Link/Text (Android „Teilen" → Küche). */
 function handleSharedRecipe() {
   const params = new URLSearchParams(location.search);
   if (!params.has('url') && !params.has('text') && !params.has('title')) return;
   const all = [params.get('url'), params.get('text'), params.get('title')].filter(Boolean).join(' ');
   history.replaceState(null, '', location.pathname);
+  // Fertiges Rezept aus dem eigenen Gemini-Gem → direkt ins Kochbuch, ohne App-KI
+  const shared = [params.get('title'), params.get('text')].filter(Boolean).join('\n');
+  if (parseRezeptText(shared).length) {
+    setTimeout(() => saveFormattedRecipes(shared), 300);
+    return;
+  }
   const link = all.match(/https?:\/\/\S+/)?.[0] || '';
   showView('kochbuch');
   setTimeout(() => {
@@ -2331,13 +2387,14 @@ function addToKochbuch(recipe, herkunft) {
     showToast(`„${recipe.titel}“ steht schon im Kochbuch`);
     return false;
   }
-  backend.setMap('kochbuch', { [makeId()]: kochbuchEntry(recipe, herkunft) });
+  const id = makeId();
+  backend.setMap('kochbuch', { [id]: kochbuchEntry(recipe, herkunft) });
   showToast(`„${recipe.titel}“ steht jetzt im Kochbuch`, {
     label: 'Ansehen',
     onClick: () => { state.rezepteTab = 'kochbuch'; showView('kochbuch'); }
   });
   vibrate(15);
-  return true;
+  return id;
 }
 
 /** Rezeptkarte. mode: "kochbuch" | "passt" | "woche" | "chat" */
@@ -2460,6 +2517,7 @@ function renderRecipes() {
       <button type="button" class="btn btn--primary" data-rf-new>
         <svg width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg> Rezept eintragen
       </button>
+      <button type="button" class="btn btn--tinted" data-paste-recipe>📋 Rezept einfügen</button>
       <button type="button" class="btn btn--tinted" data-import-open>Aus Foto oder Link</button>
       <label class="btn btn--plain kb__file">
         JSON importieren
@@ -2626,6 +2684,7 @@ function handleRecipeClick(e, container) {
   }
   if (t.closest('[data-rf-new]')) { openRecipeForm(); return true; }
   if (t.closest('[data-import-open]')) { openImportDialog(); return true; }
+  if (t.closest('[data-paste-recipe]')) { pasteRecipe(); return true; }
   if (t.closest('[data-import-file]')) { importRecipes(pendingImports(), 'import'); return true; }
   const edit = t.closest('[data-kb-edit]');
   if (edit) { openRecipeForm(edit.dataset.kbEdit); return true; }
@@ -3322,6 +3381,13 @@ function bindEvents() {
   // Eingabe
   els.form.addEventListener('submit', (e) => {
     e.preventDefault();
+    // Versehentlich ein ganzes Rezept ins Einkaufsfeld eingefügt → ins Kochbuch statt auf die Liste
+    if (saveFormattedRecipes(els.input.value)) {
+      els.input.value = '';
+      autoGrow();
+      updateSuggestions();
+      return;
+    }
     if (addFromText(els.input.value)) {
       els.input.value = '';
       autoGrow();
@@ -3534,12 +3600,26 @@ function bindEvents() {
     e.preventDefault();
     const text = $('#importText').value.trim();
     if (text.length < 30) { importStatus('Bitte den ganzen Rezepttext einfügen.', true); return; }
+    if (saveFormattedRecipes(text)) { $('#importDialog').close(); return; }
     runImport({ text }, 'text');
   });
   $('#importDialog').addEventListener('click', (e) => {
     if (e.target === $('#importDialog') && !importBusy) $('#importDialog').close();
   });
   handleSharedRecipe();
+
+  // Rezept einfügen (fertiges Rezept aus dem eigenen Gemini-Gem)
+  $('#pasteCancel').addEventListener('click', () => $('#pasteDialog').close());
+  $('#pasteForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('#pasteText').value.trim();
+    if (!text) { pasteStatus('Halte den Finger ins Feld und tippe auf „Einfügen".', true); return; }
+    if (saveFormattedRecipes(text)) { $('#pasteDialog').close(); return; }
+    pasteStatus('Das sieht nicht wie ein fertiges Rezept aus. Bitte die ganze Antwort aus Gemini kopieren und hier einfügen.', true);
+  });
+  $('#pasteDialog').addEventListener('click', (e) => {
+    if (e.target === $('#pasteDialog')) $('#pasteDialog').close();
+  });
 
   // Gang-Reihenfolge
   $('#aisleBtn').addEventListener('click', openAisleDialog);

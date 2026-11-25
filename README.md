@@ -21,6 +21,7 @@ App-Adresse (nach dem ersten Deploy): **https://blomska.github.io/Anna-Kai-Kuech
   - **Passt zu den Angeboten:** Rezepte aus dem Kochbuch, deren Zutaten gerade im Angebot sind (Stichwort-Abgleich), die meisten Treffer zuerst.
   - **Import** aus `data/rezepte-import.json` oder direkt aus einer JSON-Datei vom Handy („JSON importieren").
   - Lieblingsrezepte, Suche, Notizen, Portionen umrechnen, ausgewählte Zutaten mit einem Tipp auf die Liste.
+- **Rezept einfügen (📋):** Rezepte mit der eigenen KI erfassen (Gemini-Gem „Rezept für Anna & Kai“), Antwort kopieren, in der App „📋 Rezept einfügen“ – das Rezept steht ohne App-KI im Kochbuch. Prompt und Einrichtung: [`docs/rezept-gem.md`](docs/rezept-gem.md), Parser: `rezeptformat.js`.
 - **Küchenhelfer (Chat):** z. B. „Was können wir diese Woche eiweißreich kochen?" – mit Vorschlägen zum Abhaken, Rezeptkarten und „Soll ich mir das merken?".
 - **Marktkauf-Produkte je Seite:** Gemini liest den Marktkauf-Prospekt, unter jeder Seite lassen sich die Produkte antippen.
 - **Vorlieben:** Startwissen steht in `wissen.js` (keine Zwiebeln, eiweißreich). Helfer und Ideen der Woche halten sich daran. Einträge wie „Keine Pilze" sorgen außerdem dafür, dass passende Zutaten in Rezepten markiert und nicht automatisch auf die Liste gesetzt werden.
@@ -181,7 +182,7 @@ REWE bietet keine offene Schnittstelle für Marktangebote. Die Webseite ist durc
 
 - **Feste Favoriten:** `FAVORITEN` in `config.js`, z. B. `['Skyr', 'Eier']`.
 - **Startwissen:** `wissen.js` – neue Einträge mit höherer `seit`-Zahl anhängen und `WISSEN_VERSION` hochzählen.
-- **Wocheneinkauf-Hinweis (Do–Sa):** `WOCHENEINKAUF` in `wissen.js` füllen.
+- **Wocheneinkauf-Hinweis:** `WOCHENEINKAUF` in `wissen.js` füllen.
 - **Nach Code-Änderungen:** in `sw.js` `CACHE_VERSION` hochzählen (z. B. `v2`), damit die Handys die neue Version laden.
 
 ## Lokal testen
