@@ -589,37 +589,81 @@ function priceValue(price) {
 }
 
 /**
- * Passendes Angebot (Aldi oder Marktkauf) für einen Artikelnamen.
- * Bester Treffer gewinnt; bei gleich gutem Treffer der günstigere Preis.
+ * Grundpreis in € pro kg bzw. Liter: „1 kg = 1,69 €", „100 g = 0,99 €",
+ * „(1 l = € 1.19)", „1 kg 4,99 €" → { eur: 1.69, unit: 'kg' }.
+ */
+function basePerUnit(text) {
+  const t = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  const m = t.match(/(\d+(?:[.,]\d+)?)?\s*(kg|g|l|ml|liter)\b[^\d]*?(\d+[.,]\d{1,2})/);
+  if (!m) return null;
+  const amount = m[1] ? Number(m[1].replace(',', '.')) : 1;
+  const eur = Number(m[3].replace(',', '.'));
+  if (!amount || !Number.isFinite(eur)) return null;
+  const unit = m[2] === 'g' || m[2] === 'kg' ? 'kg' : 'l';
+  const factor = m[2] === 'g' || m[2] === 'ml' ? 1000 / amount : 1 / amount;
+  return { eur: eur * factor, unit };
+}
+
+function formatBase(base) {
+  if (!base) return '';
+  return `${base.eur.toFixed(2).replace('.', ',')} €/${base.unit}`;
+}
+
+/** Vergleich zweier Angebote: Grundpreis, wenn beide einen haben (gleiche Einheit), sonst Packungspreis. */
+function cheaperThan(a, b) {
+  if (!b) return true;
+  const ba = basePerUnit(a.basePrice);
+  const bb = basePerUnit(b.basePrice);
+  if (ba && bb && ba.unit === bb.unit) return ba.eur < bb.eur;
+  return priceValue(a.price) < priceValue(b.price);
+}
+
+/**
+ * Passendes Angebot für einen Artikelnamen über alle Läden.
+ * Bester Treffer gewinnt; bei gleich gutem Treffer der günstigere Grundpreis
+ * (€/kg bzw. €/l), sonst der günstigere Packungspreis. Gleich gute Treffer
+ * in anderen Läden kommen als „auch bei …" mit.
  */
 function autoOffer(name) {
   const key = normalize(name);
   if (autoOfferCache.has(key)) return autoOfferCache.get(key);
-  let best = null;
-  let bestScore = 0;
-  let bestStore = null;
   // Auch den ursprünglichen Namen prüfen, wenn das Gedächtnis ersetzt hat ("Skyr Natur" ← "Skyr")
   const names = [name, ...(state.wissen || [])
     .filter((w) => w.wenn && w.dann && normalize(w.dann) === key)
     .map((w) => w.wenn)];
+  // Bester Treffer je Laden
+  const perStore = [];
   for (const store of STORES) {
+    let best = null;
+    let bestScore = 0;
     for (const o of storeOffers(store)) {
       const score = Math.max(...names.map((n) => offerMatchScore(n, o.name)));
       if (!score) continue;
-      if (score > bestScore || (score === bestScore && priceValue(o.price) < priceValue(best.price))) {
+      if (score > bestScore || (score === bestScore && cheaperThan(o, best))) {
         best = o;
         bestScore = score;
-        bestStore = store;
       }
     }
+    if (best) perStore.push({ store, offer: best, score: bestScore });
   }
+  const topScore = Math.max(0, ...perStore.map((x) => x.score));
+  const top = perStore.filter((x) => x.score === topScore)
+    .sort((a, b) => (cheaperThan(a.offer, b.offer) ? -1 : cheaperThan(b.offer, a.offer) ? 1 : 0));
+  const first = top[0];
+  const best = first?.offer;
   const result = best ? {
     auto: true,
-    store: bestStore,
+    store: first.store,
     price: best.price,
     name: best.name,
     product: [best.brand, best.name].filter(Boolean).join(' '),
     unit: best.unit,
+    base: formatBase(basePerUnit(best.basePrice)),
+    also: top.slice(1).map((x) => ({
+      store: x.store,
+      price: x.offer.price,
+      base: formatBase(basePerUnit(x.offer.basePrice))
+    })),
     validFrom: best.validFrom,
     validTo: best.validTo,
     image: best.image,
@@ -789,6 +833,9 @@ function itemHtml(item) {
   if (offer) {
     const title = offer.product ? ` title="${escapeHtml(`${offer.product}${offer.unit ? `, ${offer.unit}` : ''}`)}"` : '';
     badges.push(`<span class="badge badge--offer"${title}>Angebot ${escapeHtml(offerLabel(offer))}</span>`);
+    if (offer.base) badges.push(`<span class="badge badge--muted">${escapeHtml(offer.base)}</span>`);
+    const also = (offer.also || [])[0];
+    if (also) badges.push(`<span class="badge badge--muted">auch ${escapeHtml(STORE_LABELS[also.store])} ${escapeHtml(also.base || also.price || '')}</span>`);
   } else if (item.isOffer) {
     badges.push(`<span class="badge badge--offer">Angebot${item.offerPrice ? ` ${escapeHtml(item.offerPrice)}` : ''}</span>`);
   }
