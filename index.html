@@ -328,6 +328,25 @@
     <div class="viewer__body" id="viewerBody"></div>
   </dialog>
 
+  <!-- Kochmodus -->
+  <dialog id="cookDialog" class="viewer cook" aria-labelledby="cookTitle">
+    <div class="viewer__head">
+      <div class="viewer__titlerow">
+        <h2 id="cookTitle">Kochen</h2>
+        <button type="button" class="iconbtn viewer__close" id="cookClose" aria-label="Kochmodus beenden">
+          <svg width="20" height="20" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+      <div class="cook__progress" id="cookProgress" aria-hidden="true"></div>
+    </div>
+    <div class="viewer__body cook__body" id="cookBody"></div>
+    <div class="cook__timers" id="cookTimers" hidden></div>
+    <div class="cook__nav">
+      <button type="button" class="btn btn--tinted" id="cookPrev">Zurück</button>
+      <button type="button" class="btn btn--primary" id="cookNext">Weiter</button>
+    </div>
+  </dialog>
+
   <!-- Angebote markieren -->
   <dialog id="offerDialog" class="sheet sheet--tall" aria-labelledby="offerTitle">
     <form id="offerForm" class="sheet__inner">

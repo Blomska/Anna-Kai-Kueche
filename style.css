@@ -777,3 +777,28 @@ dialog { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Kochmodus ---------- */
+.cook__progress { display: flex; gap: 4px; }
+.cook__progress span { flex: 1; height: 4px; border-radius: 99px; background: var(--fill-strong); }
+.cook__progress span.is-done { background: var(--lilac); }
+.cook__body { display: flex; flex-direction: column; gap: 18px; }
+.cook__count { margin: 0; font-size: 15px; font-weight: 600; color: var(--lilac-strong); }
+.cook__step { margin: 0; font-size: 26px; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; }
+.cook__timerbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.cook__ingr { margin: 0; padding: 0; list-style: none; font-size: 18px; }
+.cook__ingr li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: .5px solid var(--line); }
+.cook__ingr li span:last-child { color: var(--text-soft); text-align: right; }
+.cook__ingr li.is-avoided { color: var(--text-faint); text-decoration: line-through; }
+.cook__done { text-align: center; font-size: 22px; font-weight: 600; margin: 30px 0 0; }
+.cook__timers { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; }
+.cook__timer {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px;
+  border: 0; border-radius: 99px; background: var(--lilac-soft); color: var(--lilac-strong);
+  font: inherit; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.cook__timer.is-ringing { background: var(--red); color: #fff; animation: cookPulse 1s infinite; }
+@keyframes cookPulse { 50% { transform: scale(1.06); } }
+.cook__nav { display: flex; gap: 10px; padding: 12px 20px calc(14px + var(--safe-bottom)); border-top: .5px solid var(--line); }
+.cook__nav .btn { flex: 1; min-height: 54px; font-size: 18px; }
+.recipe__cook { margin-top: 8px; }
