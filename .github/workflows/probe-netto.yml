@@ -29,7 +29,7 @@ jobs:
             const u = src.startsWith('http') ? src : 'https://www.netto-online.de' + src;
             if (!/netto-online/.test(u)) continue;
             const js = await fetch(u, { headers: UA }).then((r) => r.text()).catch(() => '');
-            const hits = ctx(js, 'storefinderJSON', 500);
+            const hits = ctx(js, 'searchPath[,)+]', 700);
             if (hits.length) console.log('JS', u, '\n', hits.slice(0, 3).join('\n---\n'));
           }
           console.log('inline:', ctx(ff, 'storefinderJSON', 600).slice(1, 3));
