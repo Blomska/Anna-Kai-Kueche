@@ -1991,7 +1991,7 @@ const AVOID_SYNONYMS = {
 };
 
 // Wörter nach „keine …", die keine Zutat sind („keine Zeit", „kein Problem")
-const AVOID_STOPWORDS = new Set(['zeit', 'lust', 'problem', 'ahnung', 'angst', 'ausnahme', 'mikrowell', 'ofen', 'thermomix', 'airfryer', 'heißluftfritteus', 'tag', 'woch', 'abend', 'resten', 'rest', 'eile', 'fertiggericht', 'frühling', 'lauchzwiebel']);
+const AVOID_STOPWORDS = new Set(['zeit', 'lust', 'problem', 'ahnung', 'angst', 'ausnahme', 'mikrowell', 'ofen', 'thermomix', 'airfryer', 'heißluftfritteus', 'tag', 'woch', 'abend', 'resten', 'rest', 'eile', 'fertiggericht', 'frühling', 'lauchzwiebel', 'grill', 'muss', 'stress']);
 
 function isAvoided(name, stems = avoidStems()) {
   const n = normalize(name);
@@ -2439,7 +2439,7 @@ function startWissenEntries() {
   return START_WISSEN.map((w, i) => ({ ...w, createdAt: i }));
 }
 
-/* ---------- Wocheneinkauf-Check (Do–Sa) ---------- */
+/* ---------- Wocheneinkauf-Check ---------- */
 
 function weekKey(date = new Date()) {
   // Samstag der laufenden Woche als Schlüssel
@@ -2451,13 +2451,11 @@ function weekKey(date = new Date()) {
 function renderWeeklyCheck() {
   const wrap = $('#weeklyWrap');
   if (!wrap) return;
-  const day = new Date().getDay(); // 4 = Do, 5 = Fr, 6 = Sa
   const dismissed = readJSON('kueche:wocheneinkauf-aus', '') === weekKey();
   const open = onListNames();
   const missing = WOCHENEINKAUF.filter((w) => !open.has(normalize(applyWissen(w.name))));
-  wrap.hidden = !(day >= 4 && day <= 6) || dismissed || !missing.length;
+  wrap.hidden = dismissed || !missing.length;
   if (wrap.hidden) return;
-  $('#weeklyTitle').textContent = day === 6 ? 'Heute ist Wocheneinkauf – fehlt noch was?' : 'Samstag ist Wocheneinkauf – fehlt noch was?';
   $('#weekly').innerHTML = missing.map((w) => `
     <button type="button" class="chip" data-weekly="${escapeHtml(w.name)}" data-weekly-qty="${escapeHtml(w.qty || '')}">
       <span>${escapeHtml(w.name)}${w.qty ? ` <small>(${escapeHtml(w.qty)})</small>` : ''}</span>
