@@ -35,12 +35,6 @@ export const START_WISSEN = [
   },
   // --- seit 2: Antworten von Anna und Kai (25.11.2026) ---
   {
-    id: 'start-schnittlauch',
-    seit: 2,
-    text: 'Auch kein Schnittlauch. Rezepte damit sind okay – den Schnittlauch einfach weglassen.',
-    meiden: ['schnittlauch']
-  },
-  {
     id: 'start-fleisch',
     seit: 2,
     text: 'Meist Geflügel (Hähnchen, Pute), manchmal Rind, selten Schwein, selten Fisch. Keine Meeresfrüchte.',
@@ -64,7 +58,7 @@ export const START_WISSEN = [
   {
     id: 'start-kueche',
     seit: 2,
-    text: 'Thermomix, Mikrowelle und Grill haben wir nicht. Herd, Backofen und alles andere ist da.'
+    text: 'Wir haben einen Airfryer. Thermomix, Mikrowelle und Grill haben wir nicht. Herd, Backofen und alles andere ist da.'
   },
   {
     id: 'start-alltag',
