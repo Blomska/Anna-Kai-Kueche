@@ -13,6 +13,7 @@
  *  - Aldi Nord Angebote: strukturierte Daten (Name, Marke, Preis, Bild)
  *  - Marktkauf Nientied Lüdinghausen: Titelbild, Gültigkeit, Prospekt-Link
  *  - REWE Lüdinghausen: Versuch, die Angebote abzurufen (meist blockiert)
+ *  - Netto Lüdinghausen (Filiale 6061): Filialangebote + Blätterkatalog-Link
  *
  * Fällt eine Quelle aus, bleiben die anderen erhalten. Bei Totalausfall
  * werden die zuletzt gespeicherten Daten beibehalten.
@@ -40,10 +41,15 @@ const SOURCES = {
   edekaMarket: 'https://www.edeka.de/maerkte/071844/',
   edekaFlyerFallback: 'https://blaetterkatalog.edeka.de/RHEINRUHR/MARKTKAUF_1844/blaetterkatalog/',
   // REWE Markt Lüdinghausen, Konrad-Adenauer-Str. 6
-  rewe: 'https://www.rewe.de/angebote/luedinghausen/250345/rewe-markt-konrad-adenauer-str-6/'
+  rewe: 'https://www.rewe.de/angebote/luedinghausen/250345/rewe-markt-konrad-adenauer-str-6/',
+  // Netto Marken-Discount Lüdinghausen, Olfener Str. 19 (Netto-Filiale 6061)
+  nettoFinder: 'https://www.netto-online.de/filialfinder',
+  netto: 'https://www.netto-online.de/filialangebote',
+  nettoProspekte: 'https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm'
 };
 
 const REWE_MARKET_ID = '250345';
+const NETTO_STORE_ID = '6061';
 
 const MK_PAGES_DIR = 'data/mk-seiten';
 const MAX_PAGES = 120;
@@ -453,6 +459,151 @@ async function loadRewe() {
   return { groups, offers, sourceUrl: SOURCES.rewe };
 }
 
+/* ---------------- Netto Marken-Discount Lüdinghausen ---------------- */
+
+/**
+ * Netto zeigt die Filialangebote nur, wenn eine Filiale gewählt ist. Das
+ * Skript wählt deshalb in einer eigenen Sitzung die Filiale Olfener Str. 19
+ * (Netto-Filiale 6061) und liest danach die Angebotsseiten und den
+ * Blätterkatalog-Link aus.
+ */
+async function nettoSession() {
+  const jar = new Map();
+  const go = async (url, opts = {}, hops = 0) => {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      ...opts,
+      headers: { ...HEADERS, Cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), ...(opts.headers || {}) }
+    });
+    for (const c of res.headers.getSetCookie?.() || []) {
+      const kv = c.split(';')[0];
+      const i = kv.indexOf('=');
+      if (i > 0) jar.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+    if (res.status >= 300 && res.status < 400 && res.headers.get('location') && hops < 5) {
+      return go(new URL(res.headers.get('location'), url).href, {}, hops + 1);
+    }
+    return res;
+  };
+  const finder = await go(SOURCES.nettoFinder);
+  const html = await finder.text();
+  const setPath = html.match(/storefinderSetID:\s*"([^"]+)"/)?.[1];
+  if (!setPath) throw new Error(`Filialfinder ohne Filialauswahl (HTTP ${finder.status})`);
+  const token = html.match(/SYNCHRONIZER_TOKEN_VALUE\s*=\s*'([^']+)'/)?.[1];
+  const set = await go(setPath, {
+    method: 'POST',
+    body: `StoreID=${NETTO_STORE_ID}${token ? `&SynchronizerToken=${token}` : ''}`,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' }
+  });
+  const answer = await set.text();
+  if (!answer.includes(NETTO_STORE_ID)) throw new Error(`Filiale ${NETTO_STORE_ID} ließ sich nicht wählen (HTTP ${set.status})`);
+  return async (url) => {
+    const res = await go(url);
+    if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+    return res.text();
+  };
+}
+
+/** "…23.11.26…" → "2026-11-23" (erstes Datum im Text) */
+function nettoDate(text) {
+  const m = String(text || '').match(/(\d{2})\.(\d{2})\.(\d{2,4})/);
+  if (!m) return null;
+  const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${year}-${m[2]}-${m[1]}`;
+}
+
+/** Produkte einer Netto-Angebotsseite (aus den Merkzettel-Links jeder Kachel). */
+function parseNettoTiles(html) {
+  const offers = [];
+  const re = /ViewMMPWishlist-AddStoreArticle\?([^"]+)"/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const q = new URLSearchParams(decodeEntities(m[1]));
+    const name = (q.get('Name') || '').trim();
+    const price = parseFloat(q.get('Price'));
+    if (!name || !Number.isFinite(price)) continue;
+    const period = q.get('ValidityPeriod') || '';
+    offers.push({
+      id: `netto-${q.get('SKU') || name}`,
+      name,
+      brand: '',
+      price: formatEuro(price),
+      unit: [q.get('BundleText'), q.get('Text')].filter(Boolean).join(', ').slice(0, 90),
+      basePrice: (q.get('BasePrice') || '').trim(),
+      validFrom: nettoDate(period),
+      validTo: (q.get('ValidTo') || '').slice(0, 10) || nettoDate(period.split('-').pop()),
+      image: q.get('Image') || null
+    });
+  }
+  return offers;
+}
+
+async function loadNetto() {
+  const get = await nettoSession();
+  const main = await get(SOURCES.netto);
+  if (!main.includes(NETTO_STORE_ID) && !/Olfener/i.test(main)) throw new Error('Angebotsseite gehört nicht zur Filiale Lüdinghausen');
+
+  // Kategorien ("Obst & Gemüse", "Getränke" …) → Gruppe je Produkt
+  const cats = [];
+  const catRe = /href="https:\/\/www\.netto-online\.de\/filialangebote\/(1\/\d+|2)"\s*>([^<]+)<\/a>/g;
+  let c;
+  while ((c = catRe.exec(main))) {
+    const label = decodeEntities(c[2]).trim();
+    if (!cats.some((x) => x.path === c[1])) cats.push({ path: c[1], label });
+  }
+  const groupOf = {};
+  const extra = [];
+  const groups = [];
+  for (const cat of cats.slice(0, 20)) {
+    try {
+      const list = parseNettoTiles(await get(`${SOURCES.netto}/${cat.path}`));
+      if (!list.length) continue;
+      if (!groups.includes(cat.label)) groups.push(cat.label);
+      list.forEach((o) => {
+        if (!groupOf[o.id]) groupOf[o.id] = cat.label;
+        extra.push(o); // z. B. Wochenendangebote stehen nicht auf der Hauptseite
+      });
+    } catch (err) {
+      console.warn(`  Netto-Kategorie ${cat.label}: ${err.message}`);
+    }
+  }
+
+  const byId = new Map();
+  [...parseNettoTiles(main), ...extra].forEach((o) => { if (!byId.has(o.id)) byId.set(o.id, o); });
+  const offers = [...byId.values()].map((o) => ({ ...o, group: groupOf[o.id] || 'Weitere Angebote' }));
+  if (!offers.length) throw new Error('Keine Angebote auf der Filialseite gefunden');
+  if (offers.some((o) => o.group === 'Weitere Angebote')) groups.push('Weitere Angebote');
+  offers.sort((a, b) => groups.indexOf(a.group) - groups.indexOf(b.group) || a.name.localeCompare(b.name, 'de'));
+
+  // Blätterkatalog der Filiale
+  let current = null;
+  try {
+    const page = await get(`${SOURCES.nettoProspekte}/${NETTO_STORE_ID}`);
+    const viewerUrl = decodeEntities(page.match(/href="(https:\/\/wochenprospekt\.netto-online\.de\/[^"]+)"/)?.[1] || '');
+    const cover = decodeEntities(page.match(/(https:\/\/www\.netto-online\.de\/media_nfs\/images\/[^"' ]*flipbook[^"' ]*\.jpg[^"' ]*)/)?.[1] || '');
+    // Häufigstes Enddatum = Ende der Angebotswoche
+    const count = {};
+    offers.forEach((o) => { if (o.validTo) count[o.validTo] = (count[o.validTo] || 0) + 1; });
+    const validTo = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    if (viewerUrl) {
+      current = {
+        title: 'Netto Filial-Angebote',
+        validFrom: offers.map((o) => o.validFrom).filter(Boolean).sort()[0] || null,
+        validTo,
+        viewerUrl,
+        cover: cover || null
+      };
+    }
+  } catch (err) {
+    console.warn(`  Netto-Prospekt: ${err.message}`);
+  }
+
+  return {
+    current,
+    offers: { groups: groups.filter((g) => offers.some((o) => o.group === g)), offers, sourceUrl: SOURCES.netto }
+  };
+}
+
 /* ---------------- Hauptprogramm ---------------- */
 
 async function settle(label, fn) {
@@ -472,14 +623,15 @@ async function main() {
     previous = JSON.parse(await readFile(OUT_FILE, 'utf8'));
   } catch { /* erste Ausführung */ }
 
-  const [aldiCurrent, aldiNext, aldiOffers, marktkauf, mkOffers, mkPages, reweOffers] = await Promise.all([
+  const [aldiCurrent, aldiNext, aldiOffers, marktkauf, mkOffers, mkPages, reweOffers, netto] = await Promise.all([
     settle('Aldi Prospekt (diese Woche)', () => loadAldiFlyer(SOURCES.aldiCurrent)),
     settle('Aldi Prospekt (nächste Woche)', () => loadAldiFlyer(SOURCES.aldiNext)),
     settle('Aldi Angebote', loadAldiOffers),
     settle('Marktkauf Prospekt (Nientied-Seite)', loadMarktkauf),
     settle('Marktkauf Angebote (EDEKA)', loadMarktkaufOffers),
     settle('Marktkauf Prospektseiten (EDEKA)', loadMarktkaufPages),
-    settle('REWE Angebote', loadRewe)
+    settle('REWE Angebote', loadRewe),
+    settle('Netto Angebote & Prospekt', loadNetto)
   ]);
 
   // Marktkauf zusammenführen: Daten der Nientied-Seite + EDEKA-Prospektseiten + EDEKA-Angebote
@@ -517,6 +669,13 @@ async function main() {
       next: null,
       // Nur frische REWE-Daten verwenden – alte Angebote wären womöglich abgelaufen
       offers: reweOffers ?? null
+    },
+    netto: {
+      pageUrl: `${SOURCES.nettoProspekte}/${NETTO_STORE_ID}`,
+      // Netto-Angebote gelten Mo–Sa: alte Daten nur bis zu ihrem Enddatum behalten
+      current: netto?.current ?? (previous.netto?.current?.validTo >= new Date().toISOString().slice(0, 10) ? previous.netto.current : null),
+      next: null,
+      offers: netto?.offers ?? previous.netto?.offers ?? null
     }
   };
 
@@ -530,7 +689,8 @@ async function main() {
   const count = result.aldi.offers?.offers?.length ?? 0;
   const mkCount = result.marktkauf.offers?.offers?.length ?? 0;
   const reweCount = result.rewe.offers?.offers?.length ?? 0;
-  console.log(`→ ${OUT_FILE} geschrieben (${count} Aldi-Angebote, ${mkCount} Marktkauf-Angebote, ${reweCount} REWE-Angebote, ${result.marktkauf.current?.pages?.length ?? 0} Marktkauf-Seiten)`);
+  const nettoCount = result.netto.offers?.offers?.length ?? 0;
+  console.log(`→ ${OUT_FILE} geschrieben (${count} Aldi-Angebote, ${mkCount} Marktkauf-Angebote, ${reweCount} REWE-Angebote, ${nettoCount} Netto-Angebote, ${result.marktkauf.current?.pages?.length ?? 0} Marktkauf-Seiten)`);
 
   if (!aldiCurrent && !aldiOffers && !marktkauf) {
     console.error('Alle Quellen fehlgeschlagen – alte Daten beibehalten.');
