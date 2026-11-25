@@ -208,6 +208,12 @@ main { padding: 0 20px; }
   font-variant-numeric: tabular-nums;
 }
 .seg button.is-active .seg__count, .seg button.is-active small { color: var(--lilac-strong); }
+/* Fünf Läden nebeneinander: auch auf kleinen iPhones ohne Abschneiden */
+.seg--filter button, .seg--store button { min-width: 0; padding: 4px 3px; gap: 3px; }
+@media (max-width: 360px) {
+  .seg--filter button, .seg--store button { font-size: 13px; }
+  .seg--filter .seg__count { font-size: 11px; }
+}
 .seg--store { margin: 14px 0 16px; }
 .seg--mini button { min-height: 32px; font-size: 13px; padding: 2px 4px; }
 .seg--recipes { margin-bottom: 14px; }

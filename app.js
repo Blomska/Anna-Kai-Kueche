@@ -1251,9 +1251,9 @@ function flyerFor(store, week = 'current') {
 function renderProspektCards() {
   for (const store of STORES) {
     const suffix = { aldi: 'Aldi', marktkauf: 'Marktkauf', rewe: 'Rewe', netto: 'Netto' }[store];
-    if (!img || !label) continue;
     const img = $(`#cover${suffix}`);
     const label = $(`#valid${suffix}`);
+    if (!img || !label) continue;
     const current = flyerFor(store, 'current');
     const next = flyerFor(store, 'next');
     const today = todayIso();

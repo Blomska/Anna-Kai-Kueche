@@ -574,21 +574,23 @@ async function loadNetto() {
   const extra = [];
   const groups = [];
   const mainCount = parseNettoTiles(main).length;
+  const lists = [];
   for (const cat of cats.slice(0, 25)) {
     try {
       const list = parseNettoTiles(await get(`${SOURCES.netto}/${cat.path}`));
       console.log(`  Netto ${cat.label}: ${list.length}`);
-      // Eine Kategorie-Seite, die alles zeigt, ist keine echte Kategorie
-      if (!list.length || (list.length >= mainCount && cat.path !== '2')) continue;
-      if (!groups.includes(cat.label)) groups.push(cat.label);
-      list.forEach((o) => {
-        if (!groupOf[o.id]) groupOf[o.id] = cat.label;
-        extra.push(o); // z. B. Wochenendangebote stehen nicht auf der Hauptseite
-      });
+      extra.push(...list); // z. B. Wochenendangebote stehen nicht auf der Hauptseite
+      // Sammel-Seiten mit fast allem (z. B. „Bedientheken-Angebote") sind keine echte Kategorie
+      if (list.length && (list.length <= mainCount / 2 || cat.path === '2')) lists.push({ ...cat, list });
     } catch (err) {
       console.warn(`  Netto-Kategorie ${cat.label}: ${err.message}`);
     }
   }
+  // Kleinste Kategorie zuerst: „Obst & Gemüse" schlägt „Knüller der Woche"
+  [...lists].sort((x, y) => x.list.length - y.list.length).forEach(({ label, list }) => {
+    list.forEach((o) => { if (!groupOf[o.id]) groupOf[o.id] = label; });
+  });
+  lists.forEach(({ label }) => { if (!groups.includes(label)) groups.push(label); });
 
   const byId = new Map();
   [...parseNettoTiles(main), ...extra].forEach((o) => { if (!byId.has(o.id)) byId.set(o.id, o); });
