@@ -21,13 +21,16 @@ jobs:
               return txt;
             } catch (e) { console.log('\n###', url, 'ERR', e.message); return ''; }
           }
-          // Bounding box Lüdinghausen
-          const sf = await t('https://www.netto-online.de/INTERSHOP/web/WFS/Plus-NettoDE-Site/de_DE/-/EUR/ViewNettoStoreFinder-GetStoreItems?n=51.80&e=7.50&w=7.38&s=51.74', { n: 3000 });
-          await t('https://www.netto-online.de/filialfinder', { n: 300 });
-          const p = await t('https://www.netto-online.de/ueber-netto/Online-Prospekte.chtm', { n: 300 });
-          console.log('prospekt links:', [...new Set((p.match(/https?:[^"' ]*(prospekt|blaetter|flyer|catalog)[^"' ]*/gi) || []))].slice(0, 20));
-          const f = await t('https://www.netto-online.de/filialangebote', { n: 300 });
-          console.log('filial links:', [...new Set((f.match(/[^"' ]*filial[^"' ]*/gi) || []))].slice(0, 30));
-          await t('https://www.kaufda.de/Filialen/Luedinghausen/Netto-Marken-Discount/v-r9', { n: 200 }).then((x) => console.log('addr:', (x.match(/[A-ZÄÖÜ][a-zäöüß.-]+(?:stra(ß|ss)e|str\.|weg|platz|ring|damm|allee)[^<"]{0,15}59348[^<"]{0,20}/g) || []).slice(0, 5)));
+          const ctx = (txt, re, n = 250) => { const out = []; let m; const r = new RegExp(re, 'gi'); while ((m = r.exec(txt)) && out.length < 6) out.push(txt.slice(Math.max(0, m.index - n), m.index + n).replace(/\s+/g, ' ')); return out; };
+          const k = await t('https://www.kaufda.de/Filialen/Luedinghausen/Netto-Marken-Discount/v-r9', { n: 0 });
+          console.log('kaufda ctx:', ctx(k, '59348', 200));
+          const ff = await t('https://www.netto-online.de/filialfinder', { n: 0 });
+          console.log('ff stores ctx:', ctx(ff, 'GetStoreItems|storefinder|StoreFinder', 150).slice(0, 4));
+          for (const u of ['https://www.netto-online.de/filialen/luedinghausen', 'https://www.netto-online.de/filialfinder/Luedinghausen', 'https://www.netto-online.de/filialfinder?city=L%C3%BCdinghausen', 'https://netto-md-prospekt.media-central.com/', 'https://www.netto-online.de/INTERSHOP/web/WFS/Plus-NettoDE-Site/de_DE/-/EUR/ViewNettoStoreFinder-GetStoreItems?n=51.80&e=7.50&w=7.38&s=51.74&lat=51.77&lng=7.44']) {
+            const x = await t(u, { n: 300 });
+            console.log('ctx:', ctx(x, 'L(ü|ue)dinghausen', 200).slice(0, 3));
+          }
+          const ov = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent('[out:json];nwr["brand"~"Netto"](51.74,7.38,51.80,7.50);out tags center;') }).then((r) => r.text()).catch((e) => e.message);
+          console.log('OSM:', ov.slice(0, 2500));
           JS
           node p.mjs
