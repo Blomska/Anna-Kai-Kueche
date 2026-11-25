@@ -312,6 +312,23 @@
     </div>
   </dialog>
 
+  <!-- Fertiges Rezept einfügen (aus dem eigenen Gemini-Gem „Rezept für Anna & Kai") -->
+  <dialog id="pasteDialog" class="sheet" aria-labelledby="pasteTitle">
+    <div class="sheet__inner">
+      <div class="sheet__handle" aria-hidden="true"></div>
+      <h2 id="pasteTitle" tabindex="-1" autofocus>Rezept einfügen</h2>
+      <p class="sheet__hint">Halte den Finger in das Feld und tippe auf „Einfügen“. Dann auf „Ins Kochbuch“.</p>
+      <form id="pasteForm" class="import__text" autocomplete="off">
+        <textarea id="pasteText" rows="6" maxlength="20000" placeholder="Hier die Antwort aus Gemini einfügen" aria-label="Rezept"></textarea>
+        <p class="import__status" id="pasteStatus" role="status" hidden></p>
+        <div class="sheet__actions">
+          <button type="button" class="btn btn--plain" id="pasteCancel">Schließen</button>
+          <button type="submit" class="btn btn--primary">Ins Kochbuch</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <!-- Gang-Reihenfolge je Laden -->
   <dialog id="aisleDialog" class="sheet sheet--tall" aria-labelledby="aisleTitle">
     <form method="dialog" id="aisleForm" class="sheet__inner">
