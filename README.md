@@ -1,17 +1,18 @@
 # Anna & Kai Küche
 
-Unsere gemeinsame Einkaufsliste mit Prospekten und Kochbuch für **Aldi Nord**, **Marktkauf Nientied** und **REWE** in **59348 Lüdinghausen**.
+Unsere gemeinsame Einkaufsliste mit Prospekten und Kochbuch für **Aldi Nord**, **Marktkauf Nientied**, **REWE** und **Netto** in **59348 Lüdinghausen**.
 Ohne Login, in Echtzeit synchron zwischen unseren Handys, installierbar als App.
 
 App-Adresse (nach dem ersten Deploy): **https://blomska.github.io/Anna-Kai-Kueche/**
 
 ## Was die App kann
 
-- **Einkaufsliste:** `2x Skyr, 500 g Hähnchenbrust; Eier` wird zu drei Artikeln mit Mengen. Laden wählen (Egal / Aldi / Marktkauf / REWE), Filter oben, Kategorien in Laufweg-Reihenfolge, Abhaken mit Rückgängig, Spracheingabe, Vorschläge beim Tippen, „Oft gekauft", WhatsApp-Teilen, Display anlassen, offline nutzbar.
+- **Einkaufsliste:** `2x Skyr, 500 g Hähnchenbrust; Eier` wird zu drei Artikeln mit Mengen. Laden wählen (Egal / Aldi / Marktkauf / REWE / Netto), Filter oben, Kategorien in Laufweg-Reihenfolge, Abhaken mit Rückgängig, Spracheingabe, Vorschläge beim Tippen, „Oft gekauft", WhatsApp-Teilen, Display anlassen, offline nutzbar.
 - **Angebote:**
   - **Aldi Nord:** Prospekt zum Durchblättern (diese und nächste Woche) und alle Angebote als durchsuchbare Liste mit Bild und Preis – automatisch.
   - **Marktkauf Nientied:** Prospektseiten und Gültigkeit automatisch; Angebote als Liste, wenn EDEKA den Abruf zulässt.
   - **REWE Lüdinghausen (Konrad-Adenauer-Str. 6):** Link zum Prospekt. REWE sperrt den automatischen Abruf (siehe unten), deshalb markiert ihr Angebote dort selbst.
+  - **Netto Lüdinghausen (Olfener Str. 19, Filiale 6061):** Filialangebote als durchsuchbare Liste mit Bild und Preis und der Blätterkatalog der Filiale – automatisch. Netto hat einen Bot-Schutz; klappt der Abruf mal nicht, steht im Workflow-Protokoll `✗ Netto …` und die App zeigt den Prospekt-Link.
   - **Angebot selbst markieren:** Im Prospekt etwas gesehen? Laden antippen, Preis optional – gilt bis Samstag und erscheint auf der Liste und im Kochbuch.
   - Steht etwas von eurer Liste im Angebot, bekommt es automatisch ein Angebots-Schild mit Preis.
 - **Kochbuch:**
@@ -73,7 +74,7 @@ service cloud.firestore {
     match /lists/{listId}/offers/{offerId} {
       allow read, delete: if request.auth != null;
       allow create, update: if request.auth != null
-        && request.resource.data.store in ['aldi', 'marktkauf', 'rewe'];
+        && request.resource.data.store in ['aldi', 'marktkauf', 'rewe', 'netto'];
     }
     match /lists/{listId}/kochbuch/{recipeId} {
       allow read, delete: if request.auth != null;
@@ -163,7 +164,7 @@ Rezepte mit einem Titel, der schon im Kochbuch steht, werden übersprungen. Form
 
 ## Wie „Passt zu den Angeboten" rechnet
 
-Für jede Zutat (außer Vorrat und Zutaten, die ihr meidet) sucht die App ein passendes Angebot – erst mit dem ganzen Namen, dann mit dem letzten Wort („Griechischer Joghurt" → „Joghurt"). Gezählt werden automatische Angebote von Aldi und Marktkauf sowie alles, was ihr selbst markiert habt. Rezepte mit den meisten Treffern stehen oben.
+Für jede Zutat (außer Vorrat und Zutaten, die ihr meidet) sucht die App ein passendes Angebot – erst mit dem ganzen Namen, dann mit dem letzten Wort („Griechischer Joghurt" → „Joghurt"). Gezählt werden automatische Angebote von Aldi, Marktkauf und Netto sowie alles, was ihr selbst markiert habt. Rezepte mit den meisten Treffern stehen oben.
 
 ## REWE: was geht und was nicht
 

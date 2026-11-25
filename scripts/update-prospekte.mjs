@@ -510,6 +510,19 @@ async function nettoSession() {
   };
 }
 
+/** HTML-Text mit Umlaut-Entities → normaler Text */
+function nettoText(str) {
+  const map = { auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü', szlig: 'ß', euro: '€' };
+  return decodeEntities(String(str || '').replace(/&(auml|ouml|uuml|Auml|Ouml|Uuml|szlig|euro);/g, (m, k) => map[k])).replace(/\s+/g, ' ').trim();
+}
+
+/** "1.10 / l" → "1 l = 1,10 €" */
+function nettoBasePrice(raw) {
+  const m = String(raw || '').match(/([\d.]+)\s*\/\s*(.+)/);
+  if (!m || !Number.isFinite(parseFloat(m[1]))) return String(raw || '').trim();
+  return `1 ${m[2].trim()} = ${formatEuro(parseFloat(m[1]))}`;
+}
+
 /** "…23.11.26…" → "2026-11-23" (erstes Datum im Text) */
 function nettoDate(text) {
   const m = String(text || '').match(/(\d{2})\.(\d{2})\.(\d{2,4})/);
@@ -525,7 +538,7 @@ function parseNettoTiles(html) {
   let m;
   while ((m = re.exec(html))) {
     const q = new URLSearchParams(decodeEntities(m[1]));
-    const name = (q.get('Name') || '').trim();
+    const name = nettoText(q.get('Name'));
     const price = parseFloat(q.get('Price'));
     if (!name || !Number.isFinite(price)) continue;
     const period = q.get('ValidityPeriod') || '';
@@ -534,8 +547,8 @@ function parseNettoTiles(html) {
       name,
       brand: '',
       price: formatEuro(price),
-      unit: [q.get('BundleText'), q.get('Text')].filter(Boolean).join(', ').slice(0, 90),
-      basePrice: (q.get('BasePrice') || '').trim(),
+      unit: [q.get('BundleText'), q.get('Text')].map(nettoText).filter(Boolean).join(', ').slice(0, 90),
+      basePrice: nettoBasePrice(q.get('BasePrice')),
       validFrom: nettoDate(period),
       validTo: (q.get('ValidTo') || '').slice(0, 10) || nettoDate(period.split('-').pop()),
       image: q.get('Image') || null
@@ -551,19 +564,22 @@ async function loadNetto() {
 
   // Kategorien ("Obst & Gemüse", "Getränke" …) → Gruppe je Produkt
   const cats = [];
-  const catRe = /href="https:\/\/www\.netto-online\.de\/filialangebote\/(1\/\d+|2)"\s*>([^<]+)<\/a>/g;
+  const catRe = /<a\b[^>]*href="https:\/\/www\.netto-online\.de\/filialangebote\/(1\/\d+|2)"[^>]*>([^<]+)<\/a>/g;
   let c;
   while ((c = catRe.exec(main))) {
-    const label = decodeEntities(c[2]).trim();
+    const label = nettoText(c[2]);
     if (!cats.some((x) => x.path === c[1])) cats.push({ path: c[1], label });
   }
   const groupOf = {};
   const extra = [];
   const groups = [];
-  for (const cat of cats.slice(0, 20)) {
+  const mainCount = parseNettoTiles(main).length;
+  for (const cat of cats.slice(0, 25)) {
     try {
       const list = parseNettoTiles(await get(`${SOURCES.netto}/${cat.path}`));
-      if (!list.length) continue;
+      console.log(`  Netto ${cat.label}: ${list.length}`);
+      // Eine Kategorie-Seite, die alles zeigt, ist keine echte Kategorie
+      if (!list.length || (list.length >= mainCount && cat.path !== '2')) continue;
       if (!groups.includes(cat.label)) groups.push(cat.label);
       list.forEach((o) => {
         if (!groupOf[o.id]) groupOf[o.id] = cat.label;
