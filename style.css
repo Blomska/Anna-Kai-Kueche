@@ -824,3 +824,12 @@ dialog { color: var(--text); }
 .recipe__protein.is-high strong { color: var(--green); }
 .recipe__protein small { display: block; font-size: 12px; color: var(--text-faint); }
 .recipe__estimate { margin-top: 10px; }
+
+/* ---------- Rezept aus Foto/Link ---------- */
+.import__photo { margin-bottom: 6px; }
+.import__text { display: grid; gap: 8px; }
+#importLinkForm input { min-width: 0; }
+#importTitle:focus { outline: none; }
+.import__text textarea { width: 100%; }
+.import__status { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--lilac-mist); color: var(--lilac-strong); font-size: 14px; }
+.import__status.is-error { background: var(--red-soft); color: var(--red); }
